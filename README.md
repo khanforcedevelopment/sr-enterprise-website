@@ -155,6 +155,10 @@ now (full or part payment, minimum AED 2), and pay by card on Ziina's secure for
 details. "Pay Online" is in the menu and footer. You can also send a client a pre-filled link, for example
 `https://srenterprisefz.com/pay?ref=SR-20261105-ABC&amount=2500` (they can still change the amount).
 
+**Netlify free plan and private repos:** only one Git contributor may deploy a private repository. Commits must be
+authored by the GitHub account that owns the repo (khanforcedevelopment), otherwise Netlify stops with
+"unrecognized Git contributor".
+
 **Payments need a GitHub deploy.** The payment uses a Netlify Function (`netlify/functions/start-payment.mjs`) that
 keeps the Ziina token secret. Drag-and-drop deploys do not run functions, so deploy this site from GitHub
 (section 4, Option B). Netlify Forms keep working the same way.
