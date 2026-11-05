@@ -1,6 +1,14 @@
 /**
- * Helpers for the website's payment function.
+ * Helpers for the website's payment and admin functions.
  */
+import { timingSafeEqual } from 'node:crypto'
+
+/** Constant-time comparison of two strings (passwords, signatures). */
+export function safeEqual(given, expected) {
+  const a = Buffer.from(String(given ?? ''))
+  const b = Buffer.from(String(expected ?? ''))
+  return a.length === b.length && b.length > 0 && timingSafeEqual(a, b)
+}
 
 export const MIN_AED = 2
 
@@ -79,4 +87,17 @@ export function isHttps(u, origin) {
   } catch {
     return false
   }
+}
+
+/** Client IP as Netlify reports it (used for the admin wrong-password lockout). */
+export const clientIp = (req, context) =>
+  context?.ip || req.headers.get('x-nf-client-connection-ip') || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+
+export async function ziinaGet(path) {
+  const res = await fetch(`${ziinaBase()}${path}`, {
+    headers: { Authorization: `Bearer ${process.env.ZIINA_API_TOKEN}`, Accept: 'application/json' },
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(`Ziina error ${res.status}`)
+  return data
 }

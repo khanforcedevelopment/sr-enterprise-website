@@ -192,6 +192,29 @@ same-site JSON POSTs and is rate-limited to 20 attempts a minute per IP; the Con
 `pay.ziina.com` to be embedded for payments. Set `PAYMENTS_ENABLED = false` in `src/config/payments.js` to hide the
 Pay Online page and links.
 
+## 8b. Admin panel (/admin)
+
+`https://srenterprisefz.com/admin` is a private, password-protected panel that shows:
+
+- **Payments:** every payment started on `/pay` (reference, name, amount, test/live) with its current Ziina status
+  (Paid, Processing, Not paid yet, Failed, Cancelled). Statuses refresh from Ziina each time you open or refresh the panel.
+- **Enquiries:** all quote, invoice and general requests from the website form (Netlify Forms), with full details.
+- Totals at the top and a search box.
+
+Payment records are kept in **Netlify Blobs** (built into Netlify, no setup needed). Card details are never stored.
+
+Netlify → **Environment variables**:
+
+| Variable | Value |
+|---|---|
+| `ADMIN_PASSWORD` | your admin password, 12+ characters |
+| `ADMIN_SESSION_SECRET` | random text, 32+ characters (signs the login cookie; changing it logs you out) |
+| `NETLIFY_ACCESS_TOKEN` | Netlify → User settings → Applications → **Personal access tokens** → New access token. Needed to show enquiries. Keep it secret: it can manage your whole Netlify account. |
+
+Then **Trigger deploy**. Security: login cookie is HttpOnly/Secure/SameSite=Strict and lasts 8 hours; 5 wrong
+passwords lock that IP for 15 minutes; requests must come from this same site; the page is not indexed by search
+engines. Only payments started after this update appear in the panel.
+
 ## 9. Before going live: checklist
 
 - [ ] Review the three policy pages. Each item marked **"Owner review required"** needs your (ideally legal)

@@ -55,6 +55,8 @@ ${urls}
       const robots = `User-agent: *
 Allow: /
 Disallow: /payment/
+Disallow: /admin
+Disallow: /pay
 ${siteUrl ? `\nSitemap: ${siteUrl}/sitemap.xml\n` : ''}`
       writeFileSync(resolve(outDir, 'robots.txt'), robots)
       if (siteUrl) {

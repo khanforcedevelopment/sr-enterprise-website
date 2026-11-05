@@ -6,6 +6,7 @@ import TermsConditions from './pages/TermsConditions'
 import RefundPolicy from './pages/RefundPolicy'
 import { PaymentSuccess, PaymentCancel } from './pages/PaymentStatus'
 import Pay from './pages/Pay'
+import Admin from './pages/Admin'
 import NotFound from './pages/NotFound'
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="terms-and-conditions" element={<TermsConditions />} />
         <Route path="refund-policy" element={<RefundPolicy />} />
         <Route path="pay" element={<Pay />} />
+        <Route path="admin" element={<Admin />} />
         <Route path="payment/success" element={<PaymentSuccess />} />
         <Route path="payment/cancel" element={<PaymentCancel />} />
         <Route path="*" element={<NotFound />} />

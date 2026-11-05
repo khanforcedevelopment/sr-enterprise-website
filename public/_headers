@@ -13,6 +13,10 @@
 /.well-known/apple-developer-merchantid-domain-association
   Content-Type: text/plain
 
+/admin
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
+
 /pay
   X-Robots-Tag: noindex, nofollow
 

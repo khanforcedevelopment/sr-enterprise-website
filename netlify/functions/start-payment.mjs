@@ -14,6 +14,7 @@ import {
   json, cleanReference, cleanText, toAmount, maxAed, readJsonRequest, ziina, ziinaLive, ziinaEmbedded, isHttps,
   ZIINA_PAY_ORIGIN, MIN_AED,
 } from '../lib/shared.mjs'
+import { savePayment } from '../lib/store.mjs'
 
 export default async (req) => {
   const { body, error } = await readJsonRequest(req)
@@ -50,6 +51,22 @@ export default async (req) => {
     const embedded = ziinaEmbedded() && isHttps(intent.embedded_url, ZIINA_PAY_ORIGIN)
     const url = embedded ? intent.embedded_url : intent.redirect_url
     if (!isHttps(url)) throw new Error('no payment url')
+
+    // Keep a record for the admin panel. A storage problem must never block the payment.
+    try {
+      await savePayment({
+        id: String(intent.id),
+        reference,
+        name,
+        amount,
+        currency: 'AED',
+        status: String(intent.status || 'requires_payment_instrument'),
+        test: !ziinaLive(),
+        createdAt: new Date().toISOString(),
+      })
+    } catch (err) {
+      console.error('Could not save payment record:', err.message)
+    }
 
     console.log(`Ziina intent ${intent.id} for ${reference}: AED ${amount.toFixed(2)}${ziinaLive() ? '' : ' (test)'}`)
     return json(200, { url, embedded, amount, live: ziinaLive() })
