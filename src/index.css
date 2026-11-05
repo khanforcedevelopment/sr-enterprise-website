@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5.5rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+  body {
+    @apply font-sans;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-gold-400 ring-offset-2;
+  }
+}
+
+@layer components {
+  .container-x {
+    @apply mx-auto w-full max-w-7xl px-5 sm:px-6 lg:px-8;
+  }
+  .section {
+    @apply scroll-mt-20 py-20 sm:py-24 lg:py-28;
+  }
+
+  .btn {
+    @apply inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-5 py-3 text-sm font-semibold transition duration-200;
+  }
+  .btn-gold {
+    @apply btn bg-gradient-to-r from-gold-400 to-gold-600 text-navy-950 shadow-gold hover:-translate-y-0.5 hover:from-gold-300 hover:to-gold-500;
+  }
+  .btn-navy {
+    @apply btn bg-navy-900 text-white hover:-translate-y-0.5 hover:bg-navy-800 hover:shadow-card;
+  }
+  .btn-outline {
+    @apply btn border border-navy-200 bg-white text-navy-800 hover:border-gold-400 hover:text-gold-700;
+  }
+  .btn-outline-light {
+    @apply btn border border-white/40 text-white backdrop-blur hover:border-gold-300 hover:bg-white/10 hover:text-gold-200;
+  }
+  .btn-whatsapp {
+    @apply btn bg-[#1faa53] text-white hover:-translate-y-0.5 hover:bg-[#1a9549];
+  }
+
+  .footer-heading {
+    @apply font-serif text-base font-semibold text-white;
+  }
+  .footer-link {
+    @apply text-navy-200 transition hover:text-gold-300;
+  }
+
+  .skip-link {
+    @apply fixed left-4 top-4 z-[100] -translate-y-24 rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-navy-950 transition focus:translate-y-0;
+  }
+
+  .policy-body ul {
+    @apply list-disc space-y-2 pl-6 marker:text-gold-500;
+  }
+  .policy-body a {
+    @apply font-medium text-gold-700 underline underline-offset-2 hover:text-gold-600;
+  }
+}
+
+@layer utilities {
+  .text-gold-gradient {
+    background: linear-gradient(90deg, #ead9a9, #d3a952 45%, #c5933a);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .bg-grid {
+    background-image: linear-gradient(rgba(255, 255, 255, 0.9) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.9) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  /* Branded placeholder shown behind images while loading, or instead of them if they fail */
+  .image-fallback {
+    background-color: #1c2c4d;
+    background-image: linear-gradient(135deg, rgba(197, 147, 58, 0.18), transparent 60%),
+      linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+    background-size: 100% 100%, 32px 32px, 32px 32px;
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+  }
+  .reveal-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
