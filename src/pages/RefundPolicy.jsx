@@ -10,7 +10,7 @@ export default function RefundPolicy() {
     >
       <ReviewNote>
         Refund timeframes, percentages and conditions below are suggested starting points. Please confirm each one
-        reflects your actual business practice before publishing. Payment providers such as Ziina require a clear,
+        reflects your actual business practice before publishing. Payment providers such as Ziina and Stripe require a clear,
         accurate refund policy to be displayed.
       </ReviewNote>
 
@@ -52,7 +52,7 @@ export default function RefundPolicy() {
       <PolicySection title="5. How refunds are paid">
         <ul>
           <li>Approved refunds are made to the original payment method wherever possible.</li>
-          <li>Card payments made online through our payment provider (Ziina) are refunded to the same card. Your bank may take additional days to show the refund.</li>
+          <li>Card payments made online through our payment providers (Ziina or Stripe) are refunded to the same card. Your bank may take additional days to show the refund.</li>
           <li>We aim to process approved refunds within 14 business days of approval.</li>
           <li>Bank or transfer charges incurred by us may be deducted where permitted.</li>
         </ul>

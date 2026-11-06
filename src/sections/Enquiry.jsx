@@ -184,7 +184,7 @@ export default function Enquiry() {
               </div>
               <p className="mt-3 text-sm leading-relaxed text-navy-600">
                 {PAYMENTS_ENABLED
-                  ? 'Once you receive your invoice, you can pay the full amount or a part payment online by card through Ziina’s secure payment form.'
+                  ? 'Once you receive your invoice, you can pay the full amount or a part payment online by card through our secure payment providers (Ziina or Stripe).'
                   : 'Online card payment is not available yet. Request an invoice and our team will share the payment instructions with you directly.'}
               </p>
               {PAYMENTS_ENABLED && <PaymentButton className="mt-5 w-full" />}

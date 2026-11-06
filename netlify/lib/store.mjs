@@ -61,3 +61,7 @@ export async function updatePayment(id, patch) {
   await s.setJSON(key, next)
   return next
 }
+
+export async function getPayment(id) {
+  return payments().get(safeKey(id))
+}

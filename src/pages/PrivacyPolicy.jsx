@@ -60,6 +60,7 @@ export default function PrivacyPolicy() {
           <li><strong>WhatsApp (Meta)</strong>: messaging, when you choose to contact us via WhatsApp;</li>
           <li><strong>Google</strong>: email (Gmail), map display and fonts;</li>
           <li><strong>Ziina</strong>: secure online card payments on our Pay Online page. Card details are entered only on Ziina’s payment form and are never received by this website. We share the invoice reference, amount and the name you enter with Ziina so the payment can be matched to your invoice.</li>
+          <li><strong>Stripe</strong>: secure online card payments on our Pay Online page. Card details are entered only on Stripe’s hosted checkout page and are never received by this website. We share the invoice reference, amount and the name you enter with Stripe so the payment can be matched to your invoice.</li>
         </ul>
         <p>
           These providers process information under their own privacy policies and may store data outside the UAE.

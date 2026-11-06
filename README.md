@@ -30,8 +30,8 @@ public/                     favicon.svg, PNG icons, og-image.png, web manifest
 src/
   config/company.js         ALL company details (name, address, phone, email, licence)
   config/services.js        The three licensed services, features and images
-  config/payments.js        Online payments (Ziina Pay Online page) on/off
-netlify/functions/         Server function that creates Ziina payments (needs a GitHub deploy)
+  config/payments.js        Online payments (Ziina + Stripe Pay Online page) on/off
+netlify/functions/         Server functions for Ziina/Stripe payments, Stripe webhook, admin (need a GitHub deploy)
   config/legal.js           Toggle for "Owner review required" notes on policy pages
   components/               Header, Footer, Logo, forms, layout, etc.
   sections/                 Home page sections (Hero, About, Services, Why Us, Quote, Invoice, Contact)
@@ -192,12 +192,44 @@ same-site JSON POSTs and is rate-limited to 20 attempts a minute per IP; the Con
 `pay.ziina.com` to be embedded for payments. Set `PAYMENTS_ENABLED = false` in `src/config/payments.js` to hide the
 Pay Online page and links.
 
+## 8a. Online payments with Stripe
+
+Stripe works next to Ziina. When both are set up, clients choose **Ziina** or **Stripe** on `/pay`; when only one
+is set up, the choice is hidden and that one is used. Stripe always opens its own hosted **Stripe Checkout** page
+(card, Apple Pay, Google Pay as enabled in your Stripe account) and sends the client back to `/payment/success` or
+`/payment/cancel`. The website never sees card details.
+
+Netlify → **Environment variables**:
+
+| Variable | Value |
+|---|---|
+| `STRIPE_SECRET_KEY` | from https://dashboard.stripe.com/apikeys. `sk_test_...` = test payments (no money moves), `sk_live_...` = real payments. A restricted key (`rk_...`) with write access to Checkout Sessions also works |
+| `STRIPE_WEBHOOK_SECRET` | signing secret `whsec_...` of the webhook below |
+
+**Webhook (so the admin panel updates the moment a client pays):**
+1. Stripe Dashboard → **Developers → Webhooks → Add endpoint**.
+2. URL: `https://srenterprisefz.com/api/stripe-webhook`
+3. Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+   `checkout.session.async_payment_failed`, `checkout.session.expired`.
+4. Copy the endpoint's **Signing secret** into `STRIPE_WEBHOOK_SECRET`, then **Deploys → Trigger deploy**.
+
+Do this once in test mode (with the test key) and again in live mode (with the live key; the live webhook has its own
+secret). Without the webhook the admin panel still refreshes Stripe statuses each time you open it.
+
+Each Stripe payment shows in your Stripe Dashboard as "Invoice <reference> - <name>", with the reference also in the
+payment's metadata. Always confirm payments in Stripe, never from the website's success page.
+
+Security: the key is only read inside the functions and only sent to `api.stripe.com`; the pay page only follows a
+redirect to `checkout.stripe.com`; every webhook call is checked against the signing secret and rejected if older than
+5 minutes. No Content-Security-Policy change is needed because Stripe Checkout opens as its own page, not inside ours.
+
 ## 8b. Admin panel (/admin)
 
 `https://srenterprisefz.com/admin` is a private, password-protected panel that shows:
 
-- **Payments:** every payment started on `/pay` (reference, name, amount, test/live) with its current Ziina status
-  (Paid, Processing, Not paid yet, Failed, Cancelled). Statuses refresh from Ziina each time you open or refresh the panel.
+- **Payments:** every payment started on `/pay` (reference, name, amount, test/live) with its current Ziina or Stripe status
+  (Paid, Processing, Not paid yet, Failed, Cancelled). Statuses refresh from Ziina/Stripe each time you open or refresh the panel
+  (Stripe payments also update instantly through the webhook).
 - **Enquiries:** all quote, invoice and general requests from the website form (Netlify Forms), with full details.
 - Totals at the top and a search box.
 

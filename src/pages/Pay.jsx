@@ -6,7 +6,7 @@ import { ErrorBanner } from '../components/FormStatus'
 import WhatsAppIcon from '../components/WhatsAppIcon'
 import { useSeo } from '../hooks/useSeo'
 import { COMPANY, EMAIL_HREF } from '../config/company'
-import { MIN_PAYMENT_AED, PAYMENTS_ENABLED, ZIINA_ORIGIN } from '../config/payments'
+import { MIN_PAYMENT_AED, PAYMENTS_ENABLED, PAYMENT_METHODS, STRIPE_CHECKOUT_ORIGIN, ZIINA_ORIGIN } from '../config/payments'
 import { whatsappLink } from '../utils/whatsapp'
 
 const fmt = (v) => v.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -14,7 +14,8 @@ const cleanRef = (v) => String(v || '').replace(/[^A-Za-z0-9_/-]/g, '').slice(0,
 
 /**
  * Pay Online: the client enters their invoice/reference number and how much they want to pay now
- * (full or part payment) and pays on Ziina's secure form, embedded here or on Ziina's own page.
+ * (full or part payment), picks Ziina or Stripe (when both are switched on) and pays on the provider's secure
+ * page. Ziina's form can be embedded here; Stripe always opens its own hosted Checkout page.
  */
 export default function Pay() {
   useSeo({
@@ -38,6 +39,25 @@ export default function Pay() {
   const [message, setMessage] = useState('')
   const [checkout, setCheckout] = useState(null) // { url, amount }
   const frameRef = useRef(null)
+  const [methods, setMethods] = useState(null) // null while loading, then e.g. ['ziina', 'stripe']
+  const [method, setMethod] = useState('')
+
+  // Which payment methods are switched on (each one needs its key in Netlify).
+  useEffect(() => {
+    let alive = true
+    fetch('/api/payment-options', { headers: { Accept: 'application/json' } })
+      .then((res) => (res.ok ? res.json() : { methods: ['ziina'] }))
+      .catch(() => ({ methods: ['ziina'] }))
+      .then((data) => {
+        if (!alive) return
+        const list = (Array.isArray(data?.methods) ? data.methods : []).filter((m) => PAYMENT_METHODS[m])
+        setMethods(list)
+        setMethod((current) => current || list[0] || '')
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   // Ziina's embedded form tells the page when the payment status changes.
   useEffect(() => {
@@ -70,6 +90,7 @@ export default function Pay() {
     const errs = {}
     if (reference.length < 2) errs.reference = 'Please enter the invoice or reference number from your invoice.'
     if (!Number.isFinite(amount) || amount < MIN_PAYMENT_AED) errs.amount = `Please enter at least AED ${fmt(MIN_PAYMENT_AED)}.`
+    if (!method) errs.method = 'Please choose a payment method.'
     setErrors(errs)
     if (Object.keys(errs).length) return
 
@@ -79,7 +100,7 @@ export default function Pay() {
       const res = await fetch('/api/start-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reference, name: values.name.trim(), amount }),
+        body: JSON.stringify({ reference, name: values.name.trim(), amount, method }),
       })
       let data = {}
       try {
@@ -90,8 +111,9 @@ export default function Pay() {
       if (res.status === 404) throw new Error('Online payment is not available yet. Please contact us on WhatsApp or email.')
       if (!res.ok || !data.url) throw new Error(data.error || 'We could not open the payment page right now. Please try again or contact us.')
       const url = new URL(data.url)
-      if (url.protocol !== 'https:') throw new Error('Unexpected payment address. Please contact us.')
-      if (data.embedded && url.origin === ZIINA_ORIGIN) {
+      const allowed = method === 'stripe' ? url.origin === STRIPE_CHECKOUT_ORIGIN : url.protocol === 'https:'
+      if (!allowed) throw new Error('Unexpected payment address. Please contact us.')
+      if (method === 'ziina' && data.embedded && url.origin === ZIINA_ORIGIN) {
         url.searchParams.set('version', 'v1')
         setCheckout({ url: url.toString(), amount })
         setStatus('embedded')
@@ -109,6 +131,17 @@ export default function Pay() {
       <PayShell>
         <p className="text-sm text-navy-600">
           Online payments are not active yet. Please contact us and our team will share payment instructions.
+        </p>
+      </PayShell>
+    )
+  }
+
+  if (methods && !methods.length) {
+    return (
+      <PayShell>
+        <p className="text-sm text-navy-600">
+          Online payment is not available right now. Please contact us on WhatsApp or email and our team will share
+          payment instructions.
         </p>
       </PayShell>
     )
@@ -178,7 +211,37 @@ export default function Pay() {
             placeholder="0.00"
             hint={`Pay the full invoice amount or a part payment (minimum AED ${fmt(MIN_PAYMENT_AED)}).`}
           />
-          <button type="submit" className="btn-navy w-full justify-center" disabled={status === 'submitting'}>
+          {methods && methods.length > 1 && (
+            <fieldset>
+              <legend className="mb-2 block text-sm font-medium text-navy-800">Payment method</legend>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {methods.map((m) => (
+                  <label
+                    key={m}
+                    className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition ${method === m ? 'border-gold-400 bg-gold-50/60 ring-2 ring-gold-400' : 'border-navy-200 hover:border-navy-300'}`}
+                  >
+                    <input
+                      type="radio"
+                      name="method"
+                      value={m}
+                      checked={method === m}
+                      onChange={() => {
+                        setMethod(m)
+                        setErrors((er) => ({ ...er, method: undefined }))
+                      }}
+                      className="mt-1 accent-navy-900"
+                    />
+                    <span>
+                      <span className="block font-semibold text-navy-900">{PAYMENT_METHODS[m].label}</span>
+                      <span className="block text-xs text-navy-500">{PAYMENT_METHODS[m].note}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {errors.method && <p className="mt-1.5 text-sm text-red-600">{errors.method}</p>}
+            </fieldset>
+          )}
+          <button type="submit" className="btn-navy w-full justify-center" disabled={status === 'submitting' || !methods}>
             {status === 'submitting' ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Opening secure payment…
@@ -206,7 +269,7 @@ function PayShell({ children, wide = false }) {
           <div className="mt-6">{children}</div>
           <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-navy-500">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-500" aria-hidden="true" />
-            Card details are entered only on Ziina’s secure payment form. This website never sees or stores your card details.
+            Card details are entered only on our payment provider’s secure page (Ziina or Stripe). This website never sees or stores your card details.
           </p>
           <div className="mt-6 flex flex-col gap-3 border-t border-navy-100 pt-6 text-sm sm:flex-row sm:items-center sm:justify-between">
             <Link to="/" className="inline-flex items-center gap-1.5 text-navy-600 hover:text-navy-900">

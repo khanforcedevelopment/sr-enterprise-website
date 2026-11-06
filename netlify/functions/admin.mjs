@@ -7,10 +7,11 @@
  *   ADMIN_PASSWORD          Admin panel password, 12+ characters.
  *   ADMIN_SESSION_SECRET    Random text, 32+ characters, used to sign the login cookie. Changing it logs everyone out.
  *   NETLIFY_ACCESS_TOKEN    Optional. Netlify personal access token, needed to show form enquiries.
- *   ZIINA_API_TOKEN         Already set for payments; used here to refresh payment statuses.
+ *   ZIINA_API_TOKEN         Already set for payments; used here to refresh Ziina payment statuses.
+ *   STRIPE_SECRET_KEY       Already set for Stripe payments; used here to refresh Stripe payment statuses.
  */
 import { createHmac } from 'node:crypto'
-import { json, safeEqual, readJsonRequest, clientIp, ziinaGet } from '../lib/shared.mjs'
+import { json, safeEqual, readJsonRequest, clientIp, ziinaGet, stripeGet, stripeReady, stripeLive, stripeSessionStatus } from '../lib/shared.mjs'
 import { listPayments, updatePayment, adminLocks } from '../lib/store.mjs'
 
 const COOKIE = 'sr_admin'
@@ -112,16 +113,25 @@ async function enquiries(context) {
   return { configured: true, items }
 }
 
-/** Payments saved by /api/start-payment, with statuses refreshed from Ziina for unfinished ones. */
+/** Current status of one payment from its provider (Stripe Checkout Session or Ziina payment intent). */
+async function freshStatus(p) {
+  if (p.provider === 'stripe') {
+    const session = await stripeGet(`/v1/checkout/sessions/${encodeURIComponent(p.id)}`)
+    return stripeSessionStatus(session)
+  }
+  const intent = await ziinaGet(`/payment_intent/${encodeURIComponent(p.id)}`)
+  return String(intent.status || p.status)
+}
+
+/** Payments saved by /api/start-payment, with statuses refreshed from Ziina or Stripe for unfinished ones. */
 async function paymentsWithStatus() {
   const list = await listPayments()
-  if (!process.env.ZIINA_API_TOKEN) return list
-  const open = list.filter((p) => !FINAL.has(p.status)).slice(0, 25)
+  const canRefresh = (p) => (p.provider === 'stripe' ? stripeReady() : Boolean(process.env.ZIINA_API_TOKEN))
+  const open = list.filter((p) => !FINAL.has(p.status) && canRefresh(p)).slice(0, 25)
   await Promise.all(
     open.map(async (p) => {
       try {
-        const intent = await ziinaGet(`/payment_intent/${encodeURIComponent(p.id)}`)
-        const status = String(intent.status || p.status)
+        const status = await freshStatus(p)
         if (status !== p.status) {
           Object.assign(p, { status, updatedAt: new Date().toISOString() })
           await updatePayment(p.id, { status, updatedAt: p.updatedAt })
@@ -142,6 +152,9 @@ async function data(context) {
     paymentsError: pays.status === 'rejected' ? 'Could not load payments.' : undefined,
     ziinaConfigured: Boolean(process.env.ZIINA_API_TOKEN),
     live: process.env.ZIINA_MODE === 'live',
+    stripeConfigured: stripeReady(),
+    stripeLive: stripeLive(),
+    stripeWebhook: Boolean(process.env.STRIPE_WEBHOOK_SECRET),
   })
 }
 

@@ -1,7 +1,7 @@
 /**
  * Helpers for the website's payment and admin functions.
  */
-import { timingSafeEqual } from 'node:crypto'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 
 /** Constant-time comparison of two strings (passwords, signatures). */
 export function safeEqual(given, expected) {
@@ -100,4 +100,70 @@ export async function ziinaGet(path) {
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(`Ziina error ${res.status}`)
   return data
+}
+
+/**
+ * Stripe API (hosted Stripe Checkout). The secret key is only ever sent to api.stripe.com.
+ * STRIPE_API_BASE is only for local testing and only accepts a localhost address.
+ * Live or test mode follows the key itself: sk_live_... is live, sk_test_... is test.
+ */
+function stripeBase() {
+  const custom = process.env.STRIPE_API_BASE
+  if (custom && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(custom)) return custom
+  return 'https://api.stripe.com'
+}
+
+export const STRIPE_CHECKOUT_ORIGIN = 'https://checkout.stripe.com'
+export const stripeReady = () => /^(sk|rk)_(live|test)_/.test(String(process.env.STRIPE_SECRET_KEY || ''))
+export const stripeLive = () => /^(sk|rk)_live_/.test(String(process.env.STRIPE_SECRET_KEY || ''))
+
+/** Flattens { a: { b: [1] } } into Stripe's form encoding: a[b][0]=1. */
+function stripeForm(obj, prefix = '', out = new URLSearchParams()) {
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined || v === null) continue
+    const key = prefix ? `${prefix}[${k}]` : k
+    if (typeof v === 'object') stripeForm(v, key, out)
+    else out.append(key, String(v))
+  }
+  return out
+}
+
+async function stripeRequest(method, path, body) {
+  const res = await fetch(`${stripeBase()}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+      'Stripe-Version': '2024-06-20',
+      ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+    },
+    body: body ? stripeForm(body).toString() : undefined,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(`Stripe error ${res.status}${data?.error?.code ? ` (${String(data.error.code).slice(0, 40)})` : ''}`)
+  return data
+}
+
+export const stripePost = (path, body) => stripeRequest('POST', path, body)
+export const stripeGet = (path) => stripeRequest('GET', path)
+
+/** Our payment status (same words as Ziina's, so the admin panel shows both the same way) for a Checkout Session. */
+export function stripeSessionStatus(session) {
+  if (session.status === 'expired') return 'canceled'
+  if (session.status === 'complete') return session.payment_status === 'unpaid' ? 'pending' : 'completed'
+  return 'requires_payment_instrument'
+}
+
+/**
+ * Checks the Stripe-Signature header of a webhook (HMAC-SHA256 of "timestamp.body" with STRIPE_WEBHOOK_SECRET),
+ * rejecting events older than 5 minutes so a captured request cannot be replayed.
+ */
+export function verifyStripeSignature(rawBody, header, secret, toleranceSec = 300) {
+  if (!secret || !header) return false
+  const parts = String(header).split(',').map((p) => p.trim().split('='))
+  const t = parts.find(([k]) => k === 't')?.[1]
+  const sigs = parts.filter(([k]) => k === 'v1').map(([, v]) => v)
+  if (!t || !/^\d+$/.test(t) || !sigs.length) return false
+  if (Math.abs(Date.now() / 1000 - Number(t)) > toleranceSec) return false
+  const expected = createHmac('sha256', secret).update(`${t}.${rawBody}`).digest('hex')
+  return sigs.some((s) => safeEqual(s, expected))
 }

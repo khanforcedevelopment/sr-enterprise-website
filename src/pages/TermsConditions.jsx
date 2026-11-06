@@ -47,7 +47,7 @@ export default function TermsConditions() {
         <ul>
           <li>Invoice requests submitted through this website are requests only. An invoice is valid only when issued by the Company directly.</li>
           <li>Payment terms, accepted payment methods and due dates are stated on each invoice.</li>
-          <li>Online card payments, including part payments, are processed on a secure form provided by our payment provider (Ziina). This website does not collect or store card details. A payment is confirmed only when we have verified it, not by the website’s confirmation page.</li>
+          <li>Online card payments, including part payments, are processed on a secure form provided by our payment providers (Ziina or Stripe). This website does not collect or store card details. A payment is confirmed only when we have verified it, not by the website’s confirmation page.</li>
           <li>All prices are in UAE Dirhams (AED) unless stated otherwise. Any taxes that apply by law will be shown on the invoice.</li>
         </ul>
         <ReviewNote>
