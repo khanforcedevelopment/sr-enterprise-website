@@ -31,8 +31,8 @@ function StatusShell({ icon: Icon, iconClass, title, children }) {
 }
 
 /**
- * Ziina sends customers here after a payment (and the embedded form on /pay does too).
- * A visit to this page is NOT proof of payment: confirm every payment in the Ziina business account.
+ * Ziina (and Paymob, via /api/paymob/callback) sends customers here after a payment (and the embedded form on /pay does too).
+ * A visit to this page is NOT proof of payment: confirm every payment in the Ziina or Paymob business account.
  */
 export function PaymentSuccess() {
   useSeo({ title: 'Payment Submitted | SR Enterprise', description: 'Payment status page.', path: '/payment/success', noindex: true })
@@ -41,7 +41,7 @@ export function PaymentSuccess() {
       {PAYMENTS_ENABLED ? (
         <>
           <p>
-            If you completed your payment on Ziina’s secure payment form, it is now being processed.
+            If you completed your payment on the secure payment form, it is now being processed.
           </p>
           <p>
             Our team will confirm once your payment has been verified. Please keep your invoice reference for any

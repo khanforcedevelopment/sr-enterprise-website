@@ -1,12 +1,13 @@
 /**
- * ONLINE PAYMENTS (Ziina)
- * -----------------------
+ * ONLINE PAYMENTS (Ziina and Paymob)
+ * ----------------------------------
  * Clients pay at /pay: they enter their invoice/reference number and the amount they want to pay now
- * (full or part payment), then pay by card on Ziina's secure payment form. This website never sees or
- * stores card details. The Ziina API token lives only in Netlify environment variables (see README).
+ * (full or part payment), then pay by card on Ziina's or Paymob's secure payment form
+ * (the client picks one when both are set up). This website never sees or
+ * stores card details. The Ziina token and Paymob keys live only in Netlify environment variables (see README).
  *
  * Set PAYMENTS_ENABLED to false to hide the Pay Online page, menu link and buttons.
- * Always confirm payments in your Ziina business account, never from this website.
+ * Always confirm payments in your Ziina or Paymob business account, never from this website.
  */
 export const PAYMENTS_ENABLED = true
 

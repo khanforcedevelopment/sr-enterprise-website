@@ -12,9 +12,15 @@ import { whatsappLink } from '../utils/whatsapp'
 const fmt = (v) => v.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const cleanRef = (v) => String(v || '').replace(/[^A-Za-z0-9_/-]/g, '').slice(0, 60)
 
+const GATEWAYS = {
+  ziina: { label: 'Ziina', note: 'Card, Apple Pay or Google Pay' },
+  paymob: { label: 'Paymob', note: 'Card, Apple Pay and more' },
+}
+
 /**
  * Pay Online: the client enters their invoice/reference number and how much they want to pay now
- * (full or part payment) and pays on Ziina's secure form, embedded here or on Ziina's own page.
+ * (full or part payment), picks a gateway when more than one is set up (Ziina or Paymob), and pays on
+ * that gateway's secure form. Ziina can be embedded here; Paymob always opens its own checkout page.
  */
 export default function Pay() {
   useSeo({
@@ -30,6 +36,8 @@ export default function Pay() {
     return {
       reference: cleanRef(params.get('ref')),
       name: '',
+      email: '',
+      phone: '',
       amount: Number.isFinite(amount) && amount >= MIN_PAYMENT_AED ? amount.toFixed(2) : '',
     }
   })
@@ -38,6 +46,28 @@ export default function Pay() {
   const [message, setMessage] = useState('')
   const [checkout, setCheckout] = useState(null) // { url, amount }
   const frameRef = useRef(null)
+  // Which gateways are set up in Netlify. Until we know, assume Ziina (the original setup).
+  const [methods, setMethods] = useState({ ziina: true, paymob: false })
+  const [provider, setProvider] = useState('ziina')
+
+  useEffect(() => {
+    let alive = true
+    fetch('/api/payment-methods', { headers: { Accept: 'application/json' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m) => {
+        if (!alive || !m) return
+        const next = { ziina: Boolean(m.ziina), paymob: Boolean(m.paymob) }
+        if (!next.ziina && !next.paymob) return
+        setMethods(next)
+        setProvider((p) => (next[p] ? p : next.ziina ? 'ziina' : 'paymob'))
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+  const both = methods.ziina && methods.paymob
+  const isPaymob = provider === 'paymob'
 
   // Ziina's embedded form tells the page when the payment status changes.
   useEffect(() => {
@@ -70,6 +100,10 @@ export default function Pay() {
     const errs = {}
     if (reference.length < 2) errs.reference = 'Please enter the invoice or reference number from your invoice.'
     if (!Number.isFinite(amount) || amount < MIN_PAYMENT_AED) errs.amount = `Please enter at least AED ${fmt(MIN_PAYMENT_AED)}.`
+    if (isPaymob) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(values.email.trim())) errs.email = 'Please enter a valid email address.'
+      if (values.phone.replace(/\D/g, '').length < 7) errs.phone = 'Please enter your mobile number.'
+    }
     setErrors(errs)
     if (Object.keys(errs).length) return
 
@@ -79,7 +113,13 @@ export default function Pay() {
       const res = await fetch('/api/start-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reference, name: values.name.trim(), amount }),
+        body: JSON.stringify({
+          provider,
+          reference,
+          name: values.name.trim(),
+          amount,
+          ...(isPaymob ? { email: values.email.trim(), phone: values.phone.trim() } : {}),
+        }),
       })
       let data = {}
       try {
@@ -91,7 +131,7 @@ export default function Pay() {
       if (!res.ok || !data.url) throw new Error(data.error || 'We could not open the payment page right now. Please try again or contact us.')
       const url = new URL(data.url)
       if (url.protocol !== 'https:') throw new Error('Unexpected payment address. Please contact us.')
-      if (data.embedded && url.origin === ZIINA_ORIGIN) {
+      if (!isPaymob && data.embedded && url.origin === ZIINA_ORIGIN) {
         url.searchParams.set('version', 'v1')
         setCheckout({ url: url.toString(), amount })
         setStatus('embedded')
@@ -115,7 +155,7 @@ export default function Pay() {
   }
 
   return (
-    <PayShell wide={status === 'embedded'}>
+    <PayShell wide={status === 'embedded'} gateway={both ? null : GATEWAYS[provider].label}>
       {status === 'embedded' && checkout ? (
         <div>
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -164,6 +204,33 @@ export default function Pay() {
             maxLength={80}
             autoComplete="organization"
           />
+          {isPaymob && (
+            <div className="grid gap-5 sm:grid-cols-2">
+              <FormField
+                label="Email"
+                name="email"
+                type="email"
+                value={values.email}
+                onChange={set('email')}
+                error={errors.email}
+                required
+                maxLength={120}
+                autoComplete="email"
+              />
+              <FormField
+                label="Mobile number"
+                name="phone"
+                type="tel"
+                value={values.phone}
+                onChange={set('phone')}
+                error={errors.phone}
+                required
+                maxLength={16}
+                placeholder="+971 50 000 0000"
+                autoComplete="tel"
+              />
+            </div>
+          )}
           <FormField
             label="Amount to pay now (AED)"
             name="amount"
@@ -178,6 +245,37 @@ export default function Pay() {
             placeholder="0.00"
             hint={`Pay the full invoice amount or a part payment (minimum AED ${fmt(MIN_PAYMENT_AED)}).`}
           />
+          {both && (
+            <fieldset>
+              <legend className="mb-2 text-sm font-medium text-navy-800">Pay with</legend>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {Object.entries(GATEWAYS).map(([key, g]) => (
+                  <label
+                    key={key}
+                    className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition ${
+                      provider === key ? 'border-gold-400 bg-gold-50/50 ring-2 ring-gold-400' : 'border-navy-200 hover:border-navy-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="provider"
+                      value={key}
+                      checked={provider === key}
+                      onChange={() => {
+                        setProvider(key)
+                        setErrors({})
+                      }}
+                      className="mt-1 accent-navy-900"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-navy-900">{g.label}</span>
+                      <span className="block text-xs text-navy-500">{g.note}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
           <button type="submit" className="btn-navy w-full justify-center" disabled={status === 'submitting'}>
             {status === 'submitting' ? (
               <>
@@ -196,7 +294,7 @@ export default function Pay() {
   )
 }
 
-function PayShell({ children, wide = false }) {
+function PayShell({ children, wide = false, gateway = null }) {
   return (
     <section className="bg-navy-50/60 pb-20 pt-36">
       <div className="container-x">
@@ -206,7 +304,8 @@ function PayShell({ children, wide = false }) {
           <div className="mt-6">{children}</div>
           <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-navy-500">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-500" aria-hidden="true" />
-            Card details are entered only on Ziina’s secure payment form. This website never sees or stores your card details.
+            Card details are entered only on {gateway ? `${gateway}’s secure payment form` : 'the secure payment form of Ziina or Paymob'}.
+            This website never sees or stores your card details.
           </p>
           <div className="mt-6 flex flex-col gap-3 border-t border-navy-100 pt-6 text-sm sm:flex-row sm:items-center sm:justify-between">
             <Link to="/" className="inline-flex items-center gap-1.5 text-navy-600 hover:text-navy-900">
