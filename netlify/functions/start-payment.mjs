@@ -1,7 +1,8 @@
 /**
  * Pay page (/pay): creates a payment for the amount the client chose, with the gateway the client picked:
  *   - Ziina: returns Ziina's payment form (embedded when ZIINA_EMBEDDED is "true", otherwise Ziina's own page).
- *   - Paymob: returns Paymob's Unified Checkout page (see netlify/lib/paymob.mjs for its environment variables).
+ *   - Paymob: returns the public key + client secret for Paymob Pixel, which shows Paymob's card form inside /pay
+ *     (card fields are Paymob iframes), plus Paymob's own checkout page as a fallback. See netlify/lib/paymob.mjs.
  * Card details are entered only on the gateway's page, never on this website.
  *
  * Netlify environment variables:
@@ -130,7 +131,9 @@ async function startPaymob({ body, reference, name, amount, origin, message }) {
     }
 
     console.log(`Paymob intention ${id} for ${reference}: AED ${amount.toFixed(2)}${paymobLive() ? '' : ' (test)'}`)
-    return json(200, { url: checkoutUrl, embedded: false, amount, live: paymobLive() })
+    // The public key and the one-hour client secret are meant for the browser (Paymob Pixel). The secret key never leaves here.
+    const pixel = { publicKey: process.env.PAYMOB_PUBLIC_KEY, clientSecret: intention.client_secret }
+    return json(200, { url: checkoutUrl, embedded: true, pixel, amount, live: paymobLive() })
   } catch (err) {
     console.error('Paymob error:', err.message)
     return json(502, { error: 'We could not open the payment page right now. Please try again or contact us.' })

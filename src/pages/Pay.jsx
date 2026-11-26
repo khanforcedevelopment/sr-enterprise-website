@@ -12,6 +12,8 @@ import { whatsappLink } from '../utils/whatsapp'
 const fmt = (v) => v.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const cleanRef = (v) => String(v || '').replace(/[^A-Za-z0-9_/-]/g, '').slice(0, 60)
 
+const PIXEL_ID = 'paymob-pixel'
+
 const GATEWAYS = {
   ziina: { label: 'Ziina', note: 'Card, Apple Pay or Google Pay' },
   paymob: { label: 'Paymob', note: 'Card, Apple Pay and more' },
@@ -20,7 +22,7 @@ const GATEWAYS = {
 /**
  * Pay Online: the client enters their invoice/reference number and how much they want to pay now
  * (full or part payment), picks a gateway when more than one is set up (Ziina or Paymob), and pays on
- * that gateway's secure form. Ziina can be embedded here; Paymob always opens its own checkout page.
+ * that gateway's secure form, shown inside this page (Ziina's embedded form when ZIINA_EMBEDDED is on, Paymob Pixel).
  */
 export default function Pay() {
   useSeo({
@@ -44,7 +46,7 @@ export default function Pay() {
   const [errors, setErrors] = useState({})
   const [status, setStatus] = useState('idle') // idle | submitting | embedded | error
   const [message, setMessage] = useState('')
-  const [checkout, setCheckout] = useState(null) // { url, amount }
+  const [checkout, setCheckout] = useState(null) // { url, amount, pixel? }
   const frameRef = useRef(null)
   // Which gateways are set up in Netlify. Until we know, assume Ziina (the original setup).
   const [methods, setMethods] = useState({ ziina: true, paymob: false })
@@ -87,6 +89,36 @@ export default function Pay() {
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
   }, [status, navigate])
+
+  // Paymob Pixel: Paymob's card form shown inside this page. Card fields are Paymob's own iframes.
+  // The SDK is large, so it is only loaded when a client actually pays with Paymob.
+  useEffect(() => {
+    if (status !== 'embedded' || !checkout?.pixel) return undefined
+    let cancelled = false
+    import('paymob-pixel')
+      .then(() => {
+        if (cancelled) return
+        const el = document.getElementById(PIXEL_ID)
+        if (el) el.innerHTML = ''
+        // After paying, Pixel sends the browser to /api/paymob/callback, which checks the result and opens
+        // /payment/success or /payment/cancel.
+        new window.Pixel({
+          publicKey: checkout.pixel.publicKey,
+          clientSecret: checkout.pixel.clientSecret,
+          paymentMethods: ['card'],
+          elementId: PIXEL_ID,
+          showSaveCard: false,
+          customStyle: { Color_Primary: '#121e36', Width_of_Container: '100%', Radius_Border: '8' },
+        })
+      })
+      .catch(() => {
+        // If the embedded form cannot load, fall back to Paymob's own checkout page.
+        if (!cancelled) window.location.assign(checkout.url)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [status, checkout])
 
   const set = (field) => (e) => {
     setValues((v) => ({ ...v, [field]: e.target.value }))
@@ -131,6 +163,11 @@ export default function Pay() {
       if (!res.ok || !data.url) throw new Error(data.error || 'We could not open the payment page right now. Please try again or contact us.')
       const url = new URL(data.url)
       if (url.protocol !== 'https:') throw new Error('Unexpected payment address. Please contact us.')
+      if (isPaymob && data.embedded && data.pixel?.publicKey && data.pixel?.clientSecret) {
+        setCheckout({ url: url.toString(), amount, pixel: data.pixel })
+        setStatus('embedded')
+        return
+      }
       if (!isPaymob && data.embedded && url.origin === ZIINA_ORIGIN) {
         url.searchParams.set('version', 'v1')
         setCheckout({ url: url.toString(), amount })
@@ -174,13 +211,21 @@ export default function Pay() {
               Change amount
             </button>
           </div>
-          <iframe
-            ref={frameRef}
-            src={checkout.url}
-            title="Ziina secure payment"
-            allow="payment"
-            className="mx-auto block h-[820px] w-full max-w-[450px] border-0"
-          />
+          {checkout.pixel ? (
+            <div id={PIXEL_ID} className="mx-auto min-h-[360px] w-full max-w-[450px]">
+              <p className="flex items-center justify-center gap-2 py-16 text-sm text-navy-500">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading secure card form…
+              </p>
+            </div>
+          ) : (
+            <iframe
+              ref={frameRef}
+              src={checkout.url}
+              title="Ziina secure payment"
+              allow="payment"
+              className="mx-auto block h-[820px] w-full max-w-[450px] border-0"
+            />
+          )}
         </div>
       ) : (
         <form onSubmit={onSubmit} noValidate className="space-y-5">
