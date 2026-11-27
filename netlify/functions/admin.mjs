@@ -10,15 +10,16 @@
  *   ZIINA_API_TOKEN         Already set for payments; used here to refresh payment statuses.
  */
 import { createHmac } from 'node:crypto'
-import { json, safeEqual, readJsonRequest, clientIp, ziinaGet } from '../lib/shared.mjs'
-import { listPayments, updatePayment, adminLocks } from '../lib/store.mjs'
+import { json, safeEqual, readJsonRequest, clientIp } from '../lib/shared.mjs'
+import { adminLocks } from '../lib/store.mjs'
+import { syncPayments } from '../lib/payment-sync.mjs'
+import { receiptsConfigured } from '../lib/send-receipt.mjs'
 import { paymobConfigured, paymobLive } from '../lib/paymob.mjs'
 
 const COOKIE = 'sr_admin'
 const SESSION_HOURS = 8
 const LOCK_AFTER = 5
 const LOCK_MS = 15 * 60 * 1000
-const FINAL = new Set(['completed', 'failed', 'canceled', 'refunded'])
 
 const secretReady = () => String(process.env.ADMIN_SESSION_SECRET || '').length >= 32
 const passwordReady = () => String(process.env.ADMIN_PASSWORD || '').length >= 12
@@ -115,31 +116,14 @@ async function enquiries(context) {
 
 /**
  * Payments saved by /api/start-payment. Unfinished Ziina payments are refreshed from Ziina here;
- * Paymob payments are updated by Paymob's callback (/api/paymob/callback).
+ * Paymob payments are updated by Paymob's callback (/api/paymob/callback). Receipts still owed are sent too.
  */
-async function paymentsWithStatus() {
-  const list = await listPayments()
-  if (!process.env.ZIINA_API_TOKEN) return list
-  const open = list.filter((p) => (p.provider || 'ziina') === 'ziina' && !FINAL.has(p.status)).slice(0, 25)
-  await Promise.all(
-    open.map(async (p) => {
-      try {
-        const intent = await ziinaGet(`/payment_intent/${encodeURIComponent(p.id)}`)
-        const status = String(intent.status || p.status)
-        if (status !== p.status) {
-          Object.assign(p, { status, updatedAt: new Date().toISOString() })
-          await updatePayment(p.id, { status, updatedAt: p.updatedAt })
-        }
-      } catch {
-        p.statusError = true
-      }
-    })
-  )
-  return list
+async function paymentsWithStatus(origin) {
+  return syncPayments({ origin })
 }
 
-async function data(context) {
-  const [enq, pays] = await Promise.allSettled([enquiries(context), paymentsWithStatus()])
+async function data(context, origin) {
+  const [enq, pays] = await Promise.allSettled([enquiries(context), paymentsWithStatus(origin)])
   return json(200, {
     enquiries: enq.status === 'fulfilled' ? enq.value : { configured: true, items: [], error: 'Could not load enquiries from Netlify.' },
     payments: pays.status === 'fulfilled' ? pays.value : [],
@@ -148,6 +132,7 @@ async function data(context) {
     live: process.env.ZIINA_MODE === 'live',
     paymobConfigured: paymobConfigured(),
     paymobLive: paymobLive(),
+    receiptsConfigured: receiptsConfigured(),
   })
 }
 
@@ -160,7 +145,7 @@ export default async (req, context) => {
   if (action === 'logout') return withCookie(json(200, { ok: true }), '', 0)
   if (!validSession(req)) return json(401, { error: 'Please log in.' })
   if (action === 'session') return json(200, { ok: true })
-  if (action === 'data') return data(context)
+  if (action === 'data') return data(context, new URL(req.url).origin)
   return json(404, { error: 'Not found' })
 }
 

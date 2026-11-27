@@ -48,6 +48,10 @@ export default async (req) => {
 
   if (provider === 'paymob') return startPaymob({ body, reference, name, amount, origin, message })
 
+  // The receipt email goes to this address once Ziina confirms the payment.
+  const email = cleanEmail(body.email)
+  if (!email) return json(400, { error: 'Please enter a valid email address.' })
+
   try {
     const intent = await ziina('/payment_intent', {
       amount: Math.round(amount * 100), // fils
@@ -69,6 +73,7 @@ export default async (req) => {
         id: String(intent.id),
         reference,
         name,
+        email,
         amount,
         currency: 'AED',
         provider: 'ziina',

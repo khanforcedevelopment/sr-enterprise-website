@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Lock, LogOut, RefreshCw, Loader2, Search, CreditCard, Inbox, FileText, Receipt, MessageSquare, AlertTriangle } from 'lucide-react'
+import { Lock, LogOut, RefreshCw, Loader2, Search, CreditCard, Inbox, FileText, Receipt, MessageSquare, AlertTriangle, Mail } from 'lucide-react'
 import FormField from '../components/FormField'
 import { ErrorBanner } from '../components/FormStatus'
 import { useSeo } from '../hooks/useSeo'
@@ -180,6 +180,7 @@ export default function Admin() {
             <p className="mt-1 text-sm text-navy-500">
               Ziina: <strong className="text-navy-800">{data?.ziinaConfigured ? (data?.live ? 'Live' : 'Test') : 'Not set up'}</strong>
               {' · '}Paymob: <strong className="text-navy-800">{data?.paymobConfigured ? (data?.paymobLive ? 'Live' : 'Test') : 'Not set up'}</strong>
+              {' · '}Receipt emails: <strong className="text-navy-800">{data?.receiptsConfigured ? 'On' : 'Not set up'}</strong>
             </p>
           </div>
           <div className="flex gap-3">
@@ -288,6 +289,17 @@ function PaymentsList({ items, error }) {
                 {p.amountMismatch && (
                   <span className="ml-1 inline-flex items-center gap-1 text-amber-700">
                     <AlertTriangle className="h-3 w-3" aria-hidden="true" /> amount differs, check Paymob
+                  </span>
+                )}
+                {p.email && <span className="ml-1">· {p.email}</span>}
+                {p.receiptSentAt && (
+                  <span className="ml-1 inline-flex items-center gap-1 text-emerald-700">
+                    <Mail className="h-3 w-3" aria-hidden="true" /> receipt emailed
+                  </span>
+                )}
+                {p.receiptError && !p.receiptSentAt && (
+                  <span className="ml-1 inline-flex items-center gap-1 text-amber-700">
+                    <AlertTriangle className="h-3 w-3" aria-hidden="true" /> receipt not sent yet, retrying
                   </span>
                 )}
                 {p.statusError && (
