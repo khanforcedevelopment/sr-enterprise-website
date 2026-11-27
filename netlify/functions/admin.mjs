@@ -1,7 +1,7 @@
 /**
  * Admin panel API (/admin page). Password login, then read-only views of:
  *   - enquiries from Netlify Forms (quotes, invoice requests, general)
- *   - online payments made on /pay, with their current status from Ziina
+ *   - online payments made on /pay, with their current status (from Ziina, or from Paymob's callbacks)
  *
  * Netlify environment variables:
  *   ADMIN_PASSWORD          Admin panel password, 12+ characters.
@@ -12,12 +12,13 @@
 import { createHmac } from 'node:crypto'
 import { json, safeEqual, readJsonRequest, clientIp, ziinaGet } from '../lib/shared.mjs'
 import { listPayments, updatePayment, adminLocks } from '../lib/store.mjs'
+import { paymobConfigured, paymobLive } from '../lib/paymob.mjs'
 
 const COOKIE = 'sr_admin'
 const SESSION_HOURS = 8
 const LOCK_AFTER = 5
 const LOCK_MS = 15 * 60 * 1000
-const FINAL = new Set(['completed', 'failed', 'canceled'])
+const FINAL = new Set(['completed', 'failed', 'canceled', 'refunded'])
 
 const secretReady = () => String(process.env.ADMIN_SESSION_SECRET || '').length >= 32
 const passwordReady = () => String(process.env.ADMIN_PASSWORD || '').length >= 12
@@ -112,11 +113,14 @@ async function enquiries(context) {
   return { configured: true, items }
 }
 
-/** Payments saved by /api/start-payment, with statuses refreshed from Ziina for unfinished ones. */
+/**
+ * Payments saved by /api/start-payment. Unfinished Ziina payments are refreshed from Ziina here;
+ * Paymob payments are updated by Paymob's callback (/api/paymob/callback).
+ */
 async function paymentsWithStatus() {
   const list = await listPayments()
   if (!process.env.ZIINA_API_TOKEN) return list
-  const open = list.filter((p) => !FINAL.has(p.status)).slice(0, 25)
+  const open = list.filter((p) => (p.provider || 'ziina') === 'ziina' && !FINAL.has(p.status)).slice(0, 25)
   await Promise.all(
     open.map(async (p) => {
       try {
@@ -142,6 +146,8 @@ async function data(context) {
     paymentsError: pays.status === 'rejected' ? 'Could not load payments.' : undefined,
     ziinaConfigured: Boolean(process.env.ZIINA_API_TOKEN),
     live: process.env.ZIINA_MODE === 'live',
+    paymobConfigured: paymobConfigured(),
+    paymobLive: paymobLive(),
   })
 }
 

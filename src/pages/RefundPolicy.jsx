@@ -52,7 +52,7 @@ export default function RefundPolicy() {
       <PolicySection title="5. How refunds are paid">
         <ul>
           <li>Approved refunds are made to the original payment method wherever possible.</li>
-          <li>Card payments made online through our payment provider (Ziina) are refunded to the same card. Your bank may take additional days to show the refund.</li>
+          <li>Card payments made online through our payment providers (Ziina or Paymob) are refunded to the same card. Your bank may take additional days to show the refund.</li>
           <li>We aim to process approved refunds within 14 business days of approval.</li>
           <li>Bank or transfer charges incurred by us may be deducted where permitted.</li>
         </ul>

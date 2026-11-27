@@ -20,7 +20,9 @@ const STATUS = {
   requires_payment_instrument: { label: 'Not paid yet', cls: 'bg-navy-50 text-navy-600 ring-navy-200' },
   failed: { label: 'Failed', cls: 'bg-red-50 text-red-700 ring-red-200' },
   canceled: { label: 'Cancelled', cls: 'bg-red-50 text-red-700 ring-red-200' },
+  refunded: { label: 'Refunded', cls: 'bg-navy-50 text-navy-600 ring-navy-200' },
 }
+const PROVIDERS = { ziina: 'Ziina', paymob: 'Paymob' }
 const TYPES = {
   quote: { label: 'Quote', icon: FileText },
   invoice: { label: 'Invoice request', icon: Receipt },
@@ -123,7 +125,7 @@ export default function Admin() {
       paidSum: paid.reduce((s, p) => s + Number(p.amount || 0), 0),
       paidCount: paid.length,
       testCount: testPaid.length,
-      open: list.filter((p) => !['completed', 'failed', 'canceled'].includes(p.status)).length,
+      open: list.filter((p) => !['completed', 'failed', 'canceled', 'refunded'].includes(p.status)).length,
       enquiries: items.length,
       quotes: items.filter((s) => s.type === 'quote').length,
       invoices: items.filter((s) => s.type === 'invoice').length,
@@ -176,8 +178,8 @@ export default function Admin() {
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gold-600">Admin panel</p>
             <h1 className="mt-1 font-serif text-3xl font-semibold text-navy-900">Overview</h1>
             <p className="mt-1 text-sm text-navy-500">
-              Ziina mode: <strong className="text-navy-800">{data?.live ? 'Live' : 'Test'}</strong>
-              {!data?.ziinaConfigured && <span className="text-red-600"> · Ziina token missing</span>}
+              Ziina: <strong className="text-navy-800">{data?.ziinaConfigured ? (data?.live ? 'Live' : 'Test') : 'Not set up'}</strong>
+              {' · '}Paymob: <strong className="text-navy-800">{data?.paymobConfigured ? (data?.paymobLive ? 'Live' : 'Test') : 'Not set up'}</strong>
             </p>
           </div>
           <div className="flex gap-3">
@@ -229,7 +231,7 @@ export default function Admin() {
           )}
         </div>
         <p className="mt-4 text-xs text-navy-500">
-          Always confirm a payment in your Ziina account before marking an invoice as paid. Part payments for the same
+          Always confirm a payment in your Ziina or Paymob account before marking an invoice as paid. Part payments for the same
           reference are listed separately.
         </p>
       </div>
@@ -281,7 +283,13 @@ function PaymentsList({ items, error }) {
                 {p.test && <span className="rounded bg-navy-100 px-1.5 py-0.5 text-[11px] font-semibold uppercase text-navy-600">Test</span>}
               </p>
               <p className="mt-1 text-xs text-navy-500">
-                {fmtDate(p.createdAt)} · Ziina ID <span className="font-mono">{p.id}</span>
+                {fmtDate(p.createdAt)} · {PROVIDERS[p.provider || 'ziina'] || p.provider} {p.provider === 'paymob' ? 'ref' : 'ID'}{' '}
+                <span className="font-mono">{p.id}</span>
+                {p.amountMismatch && (
+                  <span className="ml-1 inline-flex items-center gap-1 text-amber-700">
+                    <AlertTriangle className="h-3 w-3" aria-hidden="true" /> amount differs, check Paymob
+                  </span>
+                )}
                 {p.statusError && (
                   <span className="ml-1 inline-flex items-center gap-1 text-amber-700">
                     <AlertTriangle className="h-3 w-3" aria-hidden="true" /> status not refreshed

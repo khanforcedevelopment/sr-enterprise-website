@@ -31,7 +31,7 @@ src/
   config/company.js         ALL company details (name, address, phone, email, licence)
   config/services.js        The three licensed services, features and images
   config/payments.js        Online payments (Ziina Pay Online page) on/off
-netlify/functions/         Server function that creates Ziina payments (needs a GitHub deploy)
+netlify/functions/         Server functions for Ziina and Paymob payments and /admin (needs a GitHub deploy)
   config/legal.js           Toggle for "Owner review required" notes on policy pages
   components/               Header, Footer, Logo, forms, layout, etc.
   sections/                 Home page sections (Hero, About, Services, Why Us, Quote, Invoice, Contact)
@@ -191,6 +191,41 @@ Security: the token is only read inside the function and only sent to `api-v2.zi
 same-site JSON POSTs and is rate-limited to 20 attempts a minute per IP; the Content-Security-Policy allows only
 `pay.ziina.com` to be embedded for payments. Set `PAYMENTS_ENABLED = false` in `src/config/payments.js` to hide the
 Pay Online page and links.
+
+## 8a. Online payments with Paymob (beside Ziina)
+
+Paymob (UAE) works next to Ziina on the same `/pay` page. When both are set up, the client picks **Ziina** or
+**Paymob** before paying. When only one is set up, only that one is shown. Paymob asks the client for an email and
+mobile number (Paymob needs them for its checkout and receipt).
+
+Payment happens **on our own /pay page**: Paymob's card form (Paymob Pixel, npm package `paymob-pixel`, pinned) loads
+inside the page. The card number, expiry and CVV fields are Paymob's own iframes from `uae.checkout.paymob.com`, so
+card details still never reach this website. If the form cannot load, the client is sent to Paymob's own checkout page
+instead. The Pixel code is only downloaded when a client picks Paymob, so the rest of the site stays fast.
+For Ziina on the same page, see the embedded checkout steps in section 8 (`ZIINA_EMBEDDED=true` after Ziina approves the domain).
+
+Paymob dashboard (https://uae.paymob.com) → **Settings → Account info** has the keys. **Developers → Payment
+integrations** lists the integration IDs (one for card, one for Apple Pay, and so on).
+
+Netlify → **Project configuration → Environment variables**:
+
+| Variable | Value |
+|---|---|
+| `PAYMOB_SECRET_KEY` | Secret key, `sk_test_...` while testing, `sk_live_...` for real payments |
+| `PAYMOB_PUBLIC_KEY` | Public key, `are_pk_test_...` or `are_pk_live_...` (same mode as the secret key) |
+| `PAYMOB_INTEGRATION_IDS` | Integration IDs to offer, comma separated, for example `123456,123457` |
+| `PAYMOB_HMAC_SECRET` | HMAC secret from the same page |
+| `PAYMOB_REGION` | optional, `uae` (default). Keep `uae`: the site charges in AED |
+
+Then in the Paymob dashboard, for each integration ID set both the **Transaction processed callback** and the
+**Transaction response callback** to `https://srenterprisefz.com/api/paymob/callback`, and redeploy the site.
+
+Test keys create Paymob test payments (no money moves). Switch to the live keys and live integration IDs when Paymob
+activates your account. The callback checks Paymob's HMAC signature before saving a status, and a payment only shows
+as Paid in `/admin` when Paymob's amount matches what the client chose. Always confirm payments in the Paymob
+dashboard too, never from the website's success page. The Content-Security-Policy and Permissions-Policy (in
+`netlify.toml` and `public/_headers`) allow `uae.paymob.com` and `uae.checkout.paymob.com` for this. Apple Pay and
+Google Pay inside the page are not switched on yet (card only); they need Apple Pay domain verification with Paymob first.
 
 ## 8b. Admin panel (/admin)
 
