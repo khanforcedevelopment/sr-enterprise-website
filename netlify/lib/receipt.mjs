@@ -23,6 +23,7 @@ const LINE = rgb(0.86, 0.88, 0.92)
 const GREEN = rgb(0.09, 0.5, 0.28)
 
 const PROVIDER_LABEL = { ziina: 'Ziina', paymob: 'Paymob' }
+const isCash = (rec) => rec.provider === 'cash'
 
 /** Short, stable receipt number for one payment, e.g. RCPT-20261127-4F2A9C. */
 export function receiptNumber(rec) {
@@ -39,6 +40,8 @@ const dubaiDate = (iso) =>
     timeZone: 'Asia/Dubai', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 
+const dubaiDay = (iso) => new Date(iso).toLocaleDateString('en-GB', { timeZone: 'Asia/Dubai', day: '2-digit', month: 'short', year: 'numeric' })
+
 /** The built-in PDF fonts only cover Latin-1; anything else becomes "?". */
 const pdfText = (v) => String(v ?? '').replace(/·/g, '-').replace(/[^\x20-\x7e\xa0-\xff]/g, '?')
 
@@ -49,13 +52,14 @@ const esc = (v) =>
 export function receiptFacts(rec) {
   return {
     number: receiptNumber(rec),
-    date: dubaiDate(rec.paidAt || rec.updatedAt || rec.createdAt),
+    date: rec.paidDateOnly ? dubaiDay(rec.paidAt) : dubaiDate(rec.paidAt || rec.updatedAt || rec.createdAt),
     reference: rec.reference || '-',
     name: rec.name || '',
     email: rec.email || '',
     amount: money(rec.amount),
-    method: `Online card payment via ${PROVIDER_LABEL[rec.provider] || 'card'}`,
-    transaction: String(rec.paymobTransactionId || rec.id || ''),
+    method: isCash(rec) ? 'Cash payment' : `Online card payment via ${PROVIDER_LABEL[rec.provider] || 'card'}`,
+    cash: isCash(rec),
+    transaction: isCash(rec) ? '' : String(rec.paymobTransactionId || rec.id || ''),
     test: Boolean(rec.test),
   }
 }
@@ -138,7 +142,7 @@ export async function receiptPdf(rec) {
   y -= 70
   text('Thank you for your payment.', M, y, { size: 11, bold: true })
   const notes = [
-    'This receipt confirms the online payment above was received against your invoice.',
+    `This receipt confirms the ${f.cash ? 'cash' : 'online'} payment above was received against your invoice.`,
     'If this was a part payment, any remaining balance stays due as per your invoice.',
     `Questions? Email ${COMPANY.email} or WhatsApp ${COMPANY.phone}.`,
   ]
@@ -168,7 +172,7 @@ export function receiptEmail(rec, { logoUrl } = {}) {
 ${f.test ? '<p style="margin:0 0 12px;padding:8px 12px;background:#fdecec;color:#a12626;font-size:13px;border-radius:6px"><strong>Test payment.</strong> No money was charged.</p>' : ''}
 <p style="margin:0 0 6px;display:inline-block;padding:4px 10px;background:#e9f6ee;color:#17804a;font-size:12px;font-weight:700;border-radius:20px;letter-spacing:.05em">PAYMENT RECEIVED</p>
 <h1 style="margin:12px 0 4px;font-size:30px;color:#121e36">${esc(f.amount)}</h1>
-<p style="margin:0 0 20px;color:#5f6b80;font-size:14px">${esc(hello)} thank you, we have received your online payment.</p>
+<p style="margin:0 0 20px;color:#5f6b80;font-size:14px">${esc(hello)} thank you, we have received your ${f.cash ? 'cash ' : 'online '}payment.</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e2e6ee;border-bottom:1px solid #e2e6ee">
 ${row('Invoice ref.', f.reference)}${row('Receipt no.', f.number)}${row('Date', `${f.date} (UAE)`)}${row('Paid with', f.method.replace('Online card payment via ', 'Card via '))}${f.transaction ? row('Transaction ID', f.transaction) : ''}
 </table>
@@ -181,7 +185,7 @@ ${row('Invoice ref.', f.reference)}${row('Receipt no.', f.number)}${row('Date', 
     f.test ? 'TEST PAYMENT - no money was charged.\n' : '',
     hello,
     '',
-    `Thank you, we have received your online payment of ${f.amount}.`,
+    `Thank you, we have received your ${f.cash ? 'cash' : 'online'} payment of ${f.amount}.`,
     '',
     `Invoice ref.: ${f.reference}`,
     `Receipt no.: ${f.number}`,

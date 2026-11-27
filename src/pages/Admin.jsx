@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Lock, LogOut, RefreshCw, Loader2, Search, CreditCard, Inbox, FileText, Receipt, MessageSquare, AlertTriangle, Mail } from 'lucide-react'
+import { Lock, LogOut, RefreshCw, Loader2, Search, CreditCard, Inbox, FileText, Receipt, MessageSquare, AlertTriangle, Mail, Banknote, X, CheckCircle2 } from 'lucide-react'
 import FormField from '../components/FormField'
 import { ErrorBanner } from '../components/FormStatus'
 import { useSeo } from '../hooks/useSeo'
@@ -22,7 +22,7 @@ const STATUS = {
   canceled: { label: 'Cancelled', cls: 'bg-red-50 text-red-700 ring-red-200' },
   refunded: { label: 'Refunded', cls: 'bg-navy-50 text-navy-600 ring-navy-200' },
 }
-const PROVIDERS = { ziina: 'Ziina', paymob: 'Paymob' }
+const PROVIDERS = { ziina: 'Ziina', paymob: 'Paymob', cash: 'Cash' }
 const TYPES = {
   quote: { label: 'Quote', icon: FileText },
   invoice: { label: 'Invoice request', icon: Receipt },
@@ -57,6 +57,8 @@ export default function Admin() {
   const [data, setData] = useState(null)
   const [tab, setTab] = useState('payments')
   const [query, setQuery] = useState('')
+  const [cashOpen, setCashOpen] = useState(false)
+  const [notice, setNotice] = useState('')
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -106,7 +108,7 @@ export default function Admin() {
 
   const q = query.trim().toLowerCase()
   const payments = useMemo(
-    () => (data?.payments || []).filter((p) => !q || [p.reference, p.name, p.id, String(p.amount)].join(' ').toLowerCase().includes(q)),
+    () => (data?.payments || []).filter((p) => !q || [p.reference, p.name, p.email, p.id, String(p.amount)].join(' ').toLowerCase().includes(q)),
     [data, q]
   )
   const enquiries = useMemo(
@@ -184,6 +186,9 @@ export default function Admin() {
             </p>
           </div>
           <div className="flex gap-3">
+            <button type="button" onClick={() => { setCashOpen(true); setNotice('') }} className="btn-outline">
+              <Banknote className="h-4 w-4" aria-hidden="true" /> Record cash payment
+            </button>
             <button type="button" onClick={load} className="btn-outline" disabled={busy}>
               <RefreshCw className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} aria-hidden="true" /> Refresh
             </button>
@@ -198,9 +203,26 @@ export default function Admin() {
             <ErrorBanner>{error}</ErrorBanner>
           </div>
         )}
+        {notice && (
+          <p className="mt-6 flex items-start gap-2 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800 ring-1 ring-emerald-200">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> {notice}
+          </p>
+        )}
+        {cashOpen && (
+          <CashForm
+            receiptsOn={Boolean(data?.receiptsConfigured)}
+            onClose={() => setCashOpen(false)}
+            onSaved={(msg) => {
+              setCashOpen(false)
+              setNotice(msg)
+              setTab('payments')
+              load()
+            }}
+          />
+        )}
 
         <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Stat label="Paid online (live)" value={fmtAed(totals.paidSum)} note={`${totals.paidCount} payment${totals.paidCount === 1 ? '' : 's'}`} />
+          <Stat label="Paid (online + cash)" value={fmtAed(totals.paidSum)} note={`${totals.paidCount} payment${totals.paidCount === 1 ? '' : 's'}`} />
           <Stat label="Not finished" value={totals.open} note="started, not paid yet" />
           <Stat label="Enquiries" value={totals.enquiries} note={`Quotes: ${totals.quotes} · Invoice requests: ${totals.invoices}`} />
           <Stat label="Test payments paid" value={totals.testCount} note="no real money" />
@@ -284,8 +306,17 @@ function PaymentsList({ items, error }) {
                 {p.test && <span className="rounded bg-navy-100 px-1.5 py-0.5 text-[11px] font-semibold uppercase text-navy-600">Test</span>}
               </p>
               <p className="mt-1 text-xs text-navy-500">
-                {fmtDate(p.createdAt)} · {PROVIDERS[p.provider || 'ziina'] || p.provider} {p.provider === 'paymob' ? 'ref' : 'ID'}{' '}
-                <span className="font-mono">{p.id}</span>
+                {p.provider === 'cash' ? (
+                  <>
+                    Cash received {p.paidDateOnly ? new Date(p.paidAt).toLocaleDateString('en-AE', { day: '2-digit', month: 'short', year: 'numeric' }) : fmtDate(p.paidAt)}
+                    {p.note && <span className="ml-1">· {p.note}</span>}
+                  </>
+                ) : (
+                  <>
+                    {fmtDate(p.createdAt)} · {PROVIDERS[p.provider || 'ziina'] || p.provider} {p.provider === 'paymob' ? 'ref' : 'ID'}{' '}
+                    <span className="font-mono">{p.id}</span>
+                  </>
+                )}
                 {p.amountMismatch && (
                   <span className="ml-1 inline-flex items-center gap-1 text-amber-700">
                     <AlertTriangle className="h-3 w-3" aria-hidden="true" /> amount differs, check Paymob
@@ -380,6 +411,88 @@ function Row({ label, value, href }) {
       <dd className="break-words text-navy-800">
         {value ? href ? <a href={href} className="text-gold-700 underline">{value}</a> : value : '—'}
       </dd>
+    </div>
+  )
+}
+
+const RECEIPT_RESULT = {
+  sent: (e) => `Receipt emailed to ${e}.`,
+  'already-sent': (e) => `Receipt was already emailed to ${e}.`,
+  'not-configured': () => 'Receipt email NOT sent: receipt emails are not set up yet (RESEND_API_KEY / RECEIPT_FROM in Netlify).',
+  failed: () => 'Receipt email could not be sent right now. It will be retried automatically within a few minutes.',
+  'in-progress': () => 'Receipt email is being sent.',
+}
+
+const newRequestId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
+
+/** Admin records a cash payment: saved as paid and the client gets the same PDF receipt email as online payments. */
+function CashForm({ receiptsOn, onClose, onSaved }) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
+  const [v, setV] = useState({ reference: '', name: '', email: '', amount: '', paidOn: today, note: '' })
+  const [requestId] = useState(newRequestId) // same id on retry, so one payment is never recorded twice
+  const [errors, setErrors] = useState({})
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const set = (f) => (e) => {
+    setV((x) => ({ ...x, [f]: e.target.value }))
+    setErrors((x) => ({ ...x, [f]: undefined }))
+  }
+
+  async function onSubmit(e) {
+    e.preventDefault()
+    const errs = {}
+    if (v.reference.replace(/[^A-Za-z0-9_/-]/g, '').length < 2) errs.reference = 'Enter the invoice or reference number.'
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email.trim())) errs.email = 'Enter the client email for the receipt.'
+    if (!(Number(v.amount) >= 2)) errs.amount = 'Enter the amount received (minimum AED 2).'
+    setErrors(errs)
+    if (Object.keys(errs).length) return
+    setBusy(true)
+    setErr('')
+    try {
+      const res = await api('cash', { ...v, email: v.email.trim(), amount: Number(v.amount), requestId })
+      const msg = (RECEIPT_RESULT[res.receipt] || (() => ''))(res.payment.email)
+      onSaved(`Cash payment of ${fmtAed(res.payment.amount)} for ${res.payment.reference} recorded as paid. ${msg}`)
+    } catch (e2) {
+      setErr(e2.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-6 rounded-2xl bg-white p-6 shadow-card ring-1 ring-navy-100 sm:p-8">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="flex items-center gap-2 font-serif text-xl font-semibold text-navy-900">
+            <Banknote className="h-5 w-5 text-gold-600" aria-hidden="true" /> Record cash payment
+          </h2>
+          <p className="mt-1 text-sm text-navy-500">
+            Saves the payment as paid{receiptsOn ? ' and emails the client a PDF receipt.' : '. Receipt emails are not set up yet, so no email will go out.'}
+          </p>
+        </div>
+        <button type="button" onClick={onClose} className="rounded p-1 text-navy-400 hover:text-navy-700" aria-label="Close">
+          <X className="h-5 w-5" aria-hidden="true" />
+        </button>
+      </div>
+      <form onSubmit={onSubmit} noValidate className="mt-6 grid gap-5 sm:grid-cols-2">
+        {err && <div className="sm:col-span-2"><ErrorBanner>{err}</ErrorBanner></div>}
+        <FormField label="Invoice / reference number" name="cash-reference" value={v.reference} onChange={set('reference')} error={errors.reference} required autoComplete="off" />
+        <FormField label="Client name or company" name="cash-name" value={v.name} onChange={set('name')} maxLength={80} autoComplete="off" />
+        <FormField label="Client email (receipt goes here)" name="cash-email" type="email" value={v.email} onChange={set('email')} error={errors.email} required maxLength={120} autoComplete="off" />
+        <FormField label="Amount received (AED)" name="cash-amount" type="number" inputMode="decimal" min={2} step="0.01" value={v.amount} onChange={set('amount')} error={errors.amount} required placeholder="0.00" />
+        <FormField label="Date received" name="cash-date" type="date" value={v.paidOn} onChange={set('paidOn')} max={today} />
+        <FormField label="Note (only for you, not on the receipt)" name="cash-note" value={v.note} onChange={set('note')} maxLength={200} autoComplete="off" />
+        <div className="flex flex-col gap-3 sm:col-span-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="btn-outline justify-center">Cancel</button>
+          <button type="submit" className="btn-navy justify-center" disabled={busy}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+            {receiptsOn ? 'Mark as paid & email receipt' : 'Mark as paid'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
