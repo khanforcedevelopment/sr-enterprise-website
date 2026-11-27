@@ -428,10 +428,20 @@ const newRequestId = () =>
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
 
+/** New invoice number like SR-20261127-K7QM (Dubai date + 4 random letters/digits, no look-alike 0/O/1/I). */
+function newInvoiceNumber() {
+  const ymd = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' }).replace(/-/g, '')
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const bytes = new Uint8Array(4)
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes)
+  else for (let i = 0; i < 4; i++) bytes[i] = Math.floor(Math.random() * 256)
+  return `SR-${ymd}-${Array.from(bytes, (n) => abc[n % abc.length]).join('')}`
+}
+
 /** Admin records a cash payment: saved as paid and the client gets the same PDF receipt email as online payments. */
 function CashForm({ receiptsOn, onClose, onSaved }) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
-  const [v, setV] = useState({ reference: '', name: '', email: '', amount: '', paidOn: today, note: '' })
+  const [v, setV] = useState(() => ({ reference: newInvoiceNumber(), name: '', email: '', amount: '', paidOn: today, note: '' }))
   const [requestId] = useState(newRequestId) // same id on retry, so one payment is never recorded twice
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
@@ -479,7 +489,16 @@ function CashForm({ receiptsOn, onClose, onSaved }) {
       </div>
       <form onSubmit={onSubmit} noValidate className="mt-6 grid gap-5 sm:grid-cols-2">
         {err && <div className="sm:col-span-2"><ErrorBanner>{err}</ErrorBanner></div>}
-        <FormField label="Invoice / reference number" name="cash-reference" value={v.reference} onChange={set('reference')} error={errors.reference} required autoComplete="off" />
+        <FormField
+          label="Invoice number"
+          name="cash-reference"
+          value={v.reference}
+          onChange={set('reference')}
+          error={errors.reference}
+          required
+          autoComplete="off"
+          hint="Made automatically. Change it if the client already has an invoice number."
+        />
         <FormField label="Client name or company" name="cash-name" value={v.name} onChange={set('name')} maxLength={80} autoComplete="off" />
         <FormField label="Client email (receipt goes here)" name="cash-email" type="email" value={v.email} onChange={set('email')} error={errors.email} required maxLength={120} autoComplete="off" />
         <FormField label="Amount received (AED)" name="cash-amount" type="number" inputMode="decimal" min={2} step="0.01" value={v.amount} onChange={set('amount')} error={errors.amount} required placeholder="0.00" />

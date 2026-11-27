@@ -11,7 +11,7 @@
  *   ZIINA_API_TOKEN         Already set for payments; used here to refresh payment statuses.
  */
 import { createHmac } from 'node:crypto'
-import { json, safeEqual, readJsonRequest, clientIp, cleanReference, cleanText, toAmount, maxAed, MIN_AED } from '../lib/shared.mjs'
+import { json, safeEqual, readJsonRequest, clientIp, cleanReference, cleanText, toAmount, maxAed, MIN_AED, todayDubai, newInvoiceNumber } from '../lib/shared.mjs'
 import { adminLocks, payments, safeKey } from '../lib/store.mjs'
 import { syncPayments } from '../lib/payment-sync.mjs'
 import { receiptsConfigured, sendReceiptOnce } from '../lib/send-receipt.mjs'
@@ -124,7 +124,6 @@ async function paymentsWithStatus(origin) {
 }
 
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/
-const todayDubai = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' }) // YYYY-MM-DD
 
 /**
  * Records a cash payment the admin received in person, marks it paid and emails the client the receipt.
@@ -133,7 +132,8 @@ const todayDubai = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asi
 async function recordCash(body, origin) {
   const requestId = String(body.requestId || '')
   if (!/^[A-Za-z0-9-]{16,64}$/.test(requestId)) return json(400, { error: 'Please reload the page and try again.' })
-  const reference = cleanReference(body.reference)
+  // Blank invoice number: make one, e.g. SR-20261127-K7QM.
+  const reference = cleanReference(body.reference) || newInvoiceNumber()
   if (reference.length < 2) return json(400, { error: 'Please enter the invoice or reference number.' })
   const name = cleanText(body.name, 80)
   const email = String(body.email || '').trim().slice(0, 120)

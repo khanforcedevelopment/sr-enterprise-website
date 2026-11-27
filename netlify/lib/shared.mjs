@@ -1,7 +1,7 @@
 /**
  * Helpers for the website's payment and admin functions.
  */
-import { timingSafeEqual } from 'node:crypto'
+import { timingSafeEqual, randomBytes } from 'node:crypto'
 
 /** Constant-time comparison of two strings (passwords, signatures). */
 export function safeEqual(given, expected) {
@@ -11,6 +11,15 @@ export function safeEqual(given, expected) {
 }
 
 export const MIN_AED = 2
+
+/** Today's date in the UAE as YYYY-MM-DD. */
+export const todayDubai = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
+
+/** New invoice number like SR-20261127-K7QM (UAE date + 4 random letters/digits, no look-alike 0/O/1/I). */
+export function newInvoiceNumber() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  return `SR-${todayDubai().replace(/-/g, '')}-${Array.from(randomBytes(4), (n) => abc[n % abc.length]).join('')}`
+}
 
 export const json = (status, body) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
