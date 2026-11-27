@@ -114,3 +114,50 @@ export async function sendReceiptOnce(rec, { origin } = {}) {
     return 'failed'
   }
 }
+
+/**
+ * Tells the admin that a client chose "Pay in cash" on /pay (sent to RECEIPT_BCC, default admin@...).
+ * Only when receipt emails are set up. Never throws.
+ */
+export async function notifyCashRequest(rec, { origin } = {}) {
+  try {
+    if (!receiptsConfigured()) return 'not-configured'
+    const bccEnv = String(process.env.RECEIPT_BCC ?? COMPANY.email).trim()
+    const to = (bccEnv.toLowerCase() === 'off' ? COMPANY.email : bccEnv).split(',').map((s) => s.trim()).filter((s) => EMAIL_RE.test(s))
+    if (!to.length) return 'no-email'
+    const site = siteUrl(origin)
+    const amount = `AED ${Number(rec.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    const lines = [
+      `A client chose to pay in cash on the website.`,
+      '',
+      `Invoice: ${rec.reference}`,
+      `Amount: ${amount}`,
+      `Name: ${rec.name || '-'}`,
+      `Email: ${rec.email}`,
+      `Mobile: ${rec.phone || '-'}`,
+      '',
+      `When you receive the cash, open ${site ? `${site}/admin` : 'the admin panel'} and click "Mark cash received".`,
+      'The client then gets the PDF receipt by email.',
+    ]
+    const res = await fetch(`${resendBase()}/emails`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': `cash-request/${safeKey(rec.id)}`,
+      },
+      body: JSON.stringify({
+        from: process.env.RECEIPT_FROM,
+        to,
+        reply_to: rec.email,
+        subject: `Cash payment requested - Invoice ${rec.reference} (${amount})`,
+        text: lines.join('\n'),
+      }),
+    })
+    if (!res.ok) throw new Error(`Resend ${res.status}`)
+    return 'sent'
+  } catch (err) {
+    console.error(`Cash request email for ${rec?.id} not sent: ${err.message}`)
+    return 'failed'
+  }
+}

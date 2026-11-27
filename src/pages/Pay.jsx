@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { CreditCard, Loader2, Lock, ShieldCheck, ArrowLeft, Mail } from 'lucide-react'
+import { CreditCard, Loader2, Lock, ShieldCheck, ArrowLeft, Mail, Banknote, CheckCircle2 } from 'lucide-react'
 import FormField from '../components/FormField'
 import { ErrorBanner } from '../components/FormStatus'
 import WhatsAppIcon from '../components/WhatsAppIcon'
@@ -17,6 +17,7 @@ const PIXEL_ID = 'paymob-pixel'
 const GATEWAYS = {
   ziina: { label: 'Ziina', note: 'Card, Apple Pay or Google Pay' },
   paymob: { label: 'Paymob', note: 'Card, Apple Pay and more' },
+  cash: { label: 'Cash', note: 'Pay in cash at our office' },
 }
 
 /**
@@ -44,12 +45,12 @@ export default function Pay() {
     }
   })
   const [errors, setErrors] = useState({})
-  const [status, setStatus] = useState('idle') // idle | submitting | embedded | error
+  const [status, setStatus] = useState('idle') // idle | submitting | embedded | cash | error
   const [message, setMessage] = useState('')
   const [checkout, setCheckout] = useState(null) // { url, amount, pixel? }
   const frameRef = useRef(null)
   // Which gateways are set up in Netlify. Until we know, assume Ziina (the original setup).
-  const [methods, setMethods] = useState({ ziina: true, paymob: false })
+  const [methods, setMethods] = useState({ ziina: true, paymob: false, cash: false })
   const [provider, setProvider] = useState('ziina')
 
   useEffect(() => {
@@ -58,18 +59,20 @@ export default function Pay() {
       .then((r) => (r.ok ? r.json() : null))
       .then((m) => {
         if (!alive || !m) return
-        const next = { ziina: Boolean(m.ziina), paymob: Boolean(m.paymob) }
-        if (!next.ziina && !next.paymob) return
+        const next = { ziina: Boolean(m.ziina), paymob: Boolean(m.paymob), cash: Boolean(m.cash) }
+        if (!next.ziina && !next.paymob && !next.cash) return
         setMethods(next)
-        setProvider((p) => (next[p] ? p : next.ziina ? 'ziina' : 'paymob'))
+        setProvider((p) => (next[p] ? p : ['ziina', 'paymob', 'cash'].find((k) => next[k])))
       })
       .catch(() => {})
     return () => {
       alive = false
     }
   }, [])
-  const both = methods.ziina && methods.paymob
+  const choices = Object.keys(GATEWAYS).filter((k) => methods[k])
+  const both = choices.length > 1
   const isPaymob = provider === 'paymob'
+  const isCash = provider === 'cash'
 
   // Ziina's embedded form tells the page when the payment status changes.
   useEffect(() => {
@@ -160,6 +163,11 @@ export default function Pay() {
       } catch {
         /* not JSON */
       }
+      if (isCash && res.ok && data.cash) {
+        setCheckout({ amount, reference: data.reference || reference })
+        setStatus('cash')
+        return
+      }
       if (res.status === 404) throw new Error('Online payment is not available yet. Please contact us on WhatsApp or email.')
       if (!res.ok || !data.url) throw new Error(data.error || 'We could not open the payment page right now. Please try again or contact us.')
       const url = new URL(data.url)
@@ -193,8 +201,10 @@ export default function Pay() {
   }
 
   return (
-    <PayShell wide={status === 'embedded'} gateway={both ? null : GATEWAYS[provider].label}>
-      {status === 'embedded' && checkout ? (
+    <PayShell wide={status === 'embedded'} cardNote={status !== 'cash'} gateway={both || isCash ? null : GATEWAYS[provider].label}>
+      {status === 'cash' && checkout ? (
+        <CashDone amount={checkout.amount} reference={checkout.reference} email={values.email.trim()} />
+      ) : status === 'embedded' && checkout ? (
         <div>
           <div className="mb-4 flex items-center justify-between gap-3">
             <p className="text-sm text-navy-700">
@@ -294,8 +304,8 @@ export default function Pay() {
           {both && (
             <fieldset>
               <legend className="mb-2 text-sm font-medium text-navy-800">Pay with</legend>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {Object.entries(GATEWAYS).map(([key, g]) => (
+              <div className={`grid gap-3 ${choices.length > 2 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+                {choices.map((key) => [key, GATEWAYS[key]]).map(([key, g]) => (
                   <label
                     key={key}
                     className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition ${
@@ -325,12 +335,20 @@ export default function Pay() {
           <button type="submit" className="btn-navy w-full justify-center" disabled={status === 'submitting'}>
             {status === 'submitting' ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Opening secure payment…
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> {isCash ? 'Saving…' : 'Opening secure payment…'}
               </>
             ) : (
               <>
-                <CreditCard className="h-4 w-4" aria-hidden="true" /> Continue to secure payment
-                <Lock className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+                {isCash ? (
+                  <>
+                    <Banknote className="h-4 w-4" aria-hidden="true" /> I will pay in cash
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="h-4 w-4" aria-hidden="true" /> Continue to secure payment
+                    <Lock className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+                  </>
+                )}
               </>
             )}
           </button>
@@ -340,7 +358,34 @@ export default function Pay() {
   )
 }
 
-function PayShell({ children, wide = false, gateway = null }) {
+/** Shown after the client chooses "Pay in cash": what to do next. Nothing has been charged. */
+function CashDone({ amount, reference, email }) {
+  return (
+    <div className="text-center">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+        <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
+      </div>
+      <h2 className="mt-4 font-serif text-2xl font-semibold text-navy-900">Please pay in cash</h2>
+      <p className="mt-2 text-sm text-navy-600">
+        Bring <strong className="text-navy-900">AED {fmt(amount)}</strong> to our office and mention invoice{' '}
+        <strong className="font-mono text-navy-900">{reference}</strong>.
+      </p>
+      <div className="mx-auto mt-5 max-w-sm rounded-xl bg-navy-50 p-4 text-left text-sm text-navy-700 ring-1 ring-navy-100">
+        <p className="font-semibold text-navy-900">{COMPANY.name}</p>
+        {COMPANY.addressLines.map((l) => (
+          <p key={l}>{l}</p>
+        ))}
+        <p className="mt-2">{COMPANY.phoneDisplay}</p>
+      </div>
+      <p className="mt-5 text-sm text-navy-600">
+        Once we receive the cash, your payment receipt will be emailed to <strong className="text-navy-900">{email}</strong>.
+        Please save your invoice number.
+      </p>
+    </div>
+  )
+}
+
+function PayShell({ children, wide = false, gateway = null, cardNote = true }) {
   return (
     <section className="bg-navy-50/60 pb-20 pt-36">
       <div className="container-x">
@@ -348,11 +393,13 @@ function PayShell({ children, wide = false, gateway = null }) {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gold-600">Invoice payment</p>
           <h1 className="mt-2 font-serif text-3xl font-semibold text-navy-900">Pay Online</h1>
           <div className="mt-6">{children}</div>
+          {cardNote && (
           <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-navy-500">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-500" aria-hidden="true" />
-            Card details are entered only on {gateway ? `${gateway}’s secure payment form` : 'the secure payment form of Ziina or Paymob'}.
+            Card details are entered only on {gateway ? `${gateway}’s secure payment form` : 'the secure payment form of our card payment provider'}.
             This website never sees or stores your card details.
           </p>
+          )}
           <div className="mt-6 flex flex-col gap-3 border-t border-navy-100 pt-6 text-sm sm:flex-row sm:items-center sm:justify-between">
             <Link to="/" className="inline-flex items-center gap-1.5 text-navy-600 hover:text-navy-900">
               <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to Home

@@ -170,6 +170,33 @@ async function recordCash(body, origin) {
   return json(200, { ok: true, payment: saved, receipt })
 }
 
+/**
+ * A client chose "Pay in cash" on /pay. When the cash arrives the admin marks it received (the client is then
+ * emailed the receipt), or cancels the request. Only works on cash requests that are still waiting.
+ */
+async function updateCashRequest(body, origin, received) {
+  const id = String(body.id || '')
+  if (!/^SRCASH-[A-Za-z0-9-]{8,80}$/.test(id)) return json(400, { error: 'Invalid payment.' })
+  const s = payments()
+  const cur = await s.getWithMetadata(safeKey(id))
+  const rec = cur?.data
+  if (!rec || rec.provider !== 'cash') return json(404, { error: 'Payment not found.' })
+  if (rec.status !== 'awaiting_cash') {
+    // Already done (for example a double click): just send back what is there.
+    const receipt = rec.status === 'completed' ? await sendReceiptOnce(rec, { origin }) : 'not-paid'
+    return json(200, { ok: true, payment: rec, receipt })
+  }
+  const now = new Date().toISOString()
+  const next = received
+    ? { ...rec, status: 'completed', paidAt: now, updatedAt: now }
+    : { ...rec, status: 'canceled', updatedAt: now }
+  const saved = await s.setJSON(safeKey(id), next, { onlyIfMatch: cur.etag })
+  const final = saved?.modified === false ? await s.get(safeKey(id)) : next
+  const receipt = final.status === 'completed' ? await sendReceiptOnce(final, { origin }) : 'not-paid'
+  console.log(`Cash request ${id}: ${final.status}, receipt ${receipt}`)
+  return json(200, { ok: true, payment: final, receipt })
+}
+
 async function data(context, origin) {
   const [enq, pays] = await Promise.allSettled([enquiries(context), paymentsWithStatus(origin)])
   return json(200, {
@@ -195,11 +222,13 @@ export default async (req, context) => {
   if (action === 'session') return json(200, { ok: true })
   if (action === 'data') return data(context, new URL(req.url).origin)
   if (action === 'cash') return recordCash(body, new URL(req.url).origin)
+  if (action === 'cash-received') return updateCashRequest(body, new URL(req.url).origin, true)
+  if (action === 'cash-cancel') return updateCashRequest(body, new URL(req.url).origin, false)
   return json(404, { error: 'Not found' })
 }
 
 export const config = {
-  path: ['/api/admin/login', '/api/admin/logout', '/api/admin/session', '/api/admin/data', '/api/admin/cash'],
+  path: ['/api/admin/login', '/api/admin/logout', '/api/admin/session', '/api/admin/data', '/api/admin/cash', '/api/admin/cash-received', '/api/admin/cash-cancel'],
   // Netlify rate limit: at most 30 admin requests a minute from one IP address.
   rateLimit: { windowLimit: 30, windowSize: 60, aggregateBy: ['ip', 'domain'] },
 }

@@ -12,6 +12,9 @@ export function safeEqual(given, expected) {
 
 export const MIN_AED = 2
 
+/** "Pay in cash at our office" on /pay. On unless CASH_PAYMENTS is "false". */
+export const cashEnabled = () => process.env.CASH_PAYMENTS !== 'false'
+
 /** Today's date in the UAE as YYYY-MM-DD. */
 export const todayDubai = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
 

@@ -253,6 +253,10 @@ Setup:
 Invoice numbers are made automatically (e.g. `SR-20261127-K7QM`) when none is given: on /pay the client can leave the
 field empty, and the cash form fills in a new number (editable).
 
+Pay in cash from /pay: the client picks **Cash**, gets your office address and their invoice number, and you get an
+email. The payment shows in /admin as "Waiting for cash"; click **Mark cash received** when the money arrives and the
+client is emailed the receipt (or **Cancel**). Set `CASH_PAYMENTS=false` in Netlify to hide the Cash choice.
+
 Cash payments: in /admin click **Record cash payment**, enter reference, client email, amount (and date if not today).
 It is saved as paid and the client gets the same PDF receipt (shown as "Cash payment"). A double click never records
 or emails it twice.
