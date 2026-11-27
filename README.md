@@ -250,6 +250,13 @@ Setup:
    - `RECEIPT_FROM` = `SR Enterprise <billing@srenterprisefz.com>` (any address on the verified domain)
    - Optional: `RECEIPT_BCC` (default `admin@srenterprisefz.com`, `off` for none), `RECEIPT_REPLY_TO`,
      `RECEIPT_SEND_TEST=false` to stop receipts for test payments (they are marked [TEST] otherwise).
+Invoice numbers are made automatically (e.g. `SR-20261127-K7QM`) when none is given: on /pay the client can leave the
+field empty, and the cash form fills in a new number (editable).
+
+Cash payments: in /admin click **Record cash payment**, enter reference, client email, amount (and date if not today).
+It is saved as paid and the client gets the same PDF receipt (shown as "Cash payment"). A double click never records
+or emails it twice.
+
 5. Redeploy. The admin panel shows "Receipt emails: On" and "receipt emailed" next to each paid payment.
 
 ## 8b. Admin panel (/admin)

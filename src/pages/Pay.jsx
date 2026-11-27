@@ -130,7 +130,7 @@ export default function Pay() {
     const reference = cleanRef(values.reference)
     const amount = Math.round(Number(values.amount) * 100) / 100
     const errs = {}
-    if (reference.length < 2) errs.reference = 'Please enter the invoice or reference number from your invoice.'
+    if (reference.length === 1) errs.reference = 'Please enter the full invoice number, or leave it empty.'
     if (!Number.isFinite(amount) || amount < MIN_PAYMENT_AED) errs.amount = `Please enter at least AED ${fmt(MIN_PAYMENT_AED)}.`
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(values.email.trim())) errs.email = 'Please enter a valid email address.'
     if (isPaymob) {
@@ -165,13 +165,13 @@ export default function Pay() {
       const url = new URL(data.url)
       if (url.protocol !== 'https:') throw new Error('Unexpected payment address. Please contact us.')
       if (isPaymob && data.embedded && data.pixel?.publicKey && data.pixel?.clientSecret) {
-        setCheckout({ url: url.toString(), amount, pixel: data.pixel })
+        setCheckout({ url: url.toString(), amount, pixel: data.pixel, reference: data.reference || reference })
         setStatus('embedded')
         return
       }
       if (!isPaymob && data.embedded && url.origin === ZIINA_ORIGIN) {
         url.searchParams.set('version', 'v1')
-        setCheckout({ url: url.toString(), amount })
+        setCheckout({ url: url.toString(), amount, reference: data.reference || reference })
         setStatus('embedded')
         return
       }
@@ -199,7 +199,7 @@ export default function Pay() {
           <div className="mb-4 flex items-center justify-between gap-3">
             <p className="text-sm text-navy-700">
               Paying <strong className="text-navy-900">AED {fmt(checkout.amount)}</strong> for{' '}
-              <strong className="font-mono text-navy-900">{cleanRef(values.reference)}</strong>
+              <strong className="font-mono text-navy-900">{checkout.reference || cleanRef(values.reference)}</strong>
             </p>
             <button
               type="button"
@@ -237,10 +237,9 @@ export default function Pay() {
             value={values.reference}
             onChange={set('reference')}
             error={errors.reference}
-            required
             placeholder="e.g. SR-20261105-ABC"
             autoComplete="off"
-            hint="You will find it at the top of your invoice."
+            hint="From the top of your invoice. No invoice number? Leave it empty and we will create one for you."
           />
           <FormField
             label="Your name or company"

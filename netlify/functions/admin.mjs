@@ -2,6 +2,7 @@
  * Admin panel API (/admin page). Password login, then read-only views of:
  *   - enquiries from Netlify Forms (quotes, invoice requests, general)
  *   - online payments made on /pay, with their current status (from Ziina, or from Paymob's callbacks)
+ * and one action: record a cash payment, which emails the client the same PDF receipt as online payments.
  *
  * Netlify environment variables:
  *   ADMIN_PASSWORD          Admin panel password, 12+ characters.
@@ -10,10 +11,10 @@
  *   ZIINA_API_TOKEN         Already set for payments; used here to refresh payment statuses.
  */
 import { createHmac } from 'node:crypto'
-import { json, safeEqual, readJsonRequest, clientIp } from '../lib/shared.mjs'
-import { adminLocks } from '../lib/store.mjs'
+import { json, safeEqual, readJsonRequest, clientIp, cleanReference, cleanText, toAmount, maxAed, MIN_AED, todayDubai, newInvoiceNumber } from '../lib/shared.mjs'
+import { adminLocks, payments, safeKey } from '../lib/store.mjs'
 import { syncPayments } from '../lib/payment-sync.mjs'
-import { receiptsConfigured } from '../lib/send-receipt.mjs'
+import { receiptsConfigured, sendReceiptOnce } from '../lib/send-receipt.mjs'
 import { paymobConfigured, paymobLive } from '../lib/paymob.mjs'
 
 const COOKIE = 'sr_admin'
@@ -122,6 +123,53 @@ async function paymentsWithStatus(origin) {
   return syncPayments({ origin })
 }
 
+const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/
+
+/**
+ * Records a cash payment the admin received in person, marks it paid and emails the client the receipt.
+ * requestId comes from the form, so a double click or a retry never records (or emails) the same payment twice.
+ */
+async function recordCash(body, origin) {
+  const requestId = String(body.requestId || '')
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(requestId)) return json(400, { error: 'Please reload the page and try again.' })
+  // Blank invoice number: make one, e.g. SR-20261127-K7QM.
+  const reference = cleanReference(body.reference) || newInvoiceNumber()
+  if (reference.length < 2) return json(400, { error: 'Please enter the invoice or reference number.' })
+  const name = cleanText(body.name, 80)
+  const email = String(body.email || '').trim().slice(0, 120)
+  if (!EMAIL_RE.test(email)) return json(400, { error: 'Please enter the client email address for the receipt.' })
+  const amount = toAmount(body.amount)
+  if (!Number.isFinite(amount) || amount < MIN_AED || amount > Math.max(maxAed(), 1_000_000)) {
+    return json(400, { error: 'Please enter a valid amount.' })
+  }
+  const today = todayDubai()
+  const paidOn = /^\d{4}-\d{2}-\d{2}$/.test(String(body.paidOn || '')) ? String(body.paidOn) : today
+  if (paidOn > today || paidOn < '2026-01-01') return json(400, { error: 'The payment date cannot be in the future.' })
+  const now = new Date().toISOString()
+  const record = {
+    id: `SRCASH-${requestId}`,
+    provider: 'cash',
+    reference,
+    name,
+    email,
+    amount,
+    currency: 'AED',
+    status: 'completed',
+    test: false,
+    note: cleanText(body.note, 200),
+    createdAt: now,
+    updatedAt: now,
+    // Paid today: exact time. Earlier date: that day only (the receipt then shows the date without a time).
+    paidAt: paidOn === today ? now : `${paidOn}T12:00:00+04:00`,
+    ...(paidOn === today ? {} : { paidDateOnly: true }),
+  }
+  const created = await payments().setJSON(safeKey(record.id), record, { onlyIfNew: true })
+  const saved = created?.modified === false ? await payments().get(safeKey(record.id)) : record
+  const receipt = await sendReceiptOnce(saved, { origin })
+  console.log(`Cash payment ${saved.id} for ${saved.reference}: AED ${Number(saved.amount).toFixed(2)}, receipt ${receipt}`)
+  return json(200, { ok: true, payment: saved, receipt })
+}
+
 async function data(context, origin) {
   const [enq, pays] = await Promise.allSettled([enquiries(context), paymentsWithStatus(origin)])
   return json(200, {
@@ -146,11 +194,12 @@ export default async (req, context) => {
   if (!validSession(req)) return json(401, { error: 'Please log in.' })
   if (action === 'session') return json(200, { ok: true })
   if (action === 'data') return data(context, new URL(req.url).origin)
+  if (action === 'cash') return recordCash(body, new URL(req.url).origin)
   return json(404, { error: 'Not found' })
 }
 
 export const config = {
-  path: ['/api/admin/login', '/api/admin/logout', '/api/admin/session', '/api/admin/data'],
+  path: ['/api/admin/login', '/api/admin/logout', '/api/admin/session', '/api/admin/data', '/api/admin/cash'],
   // Netlify rate limit: at most 30 admin requests a minute from one IP address.
   rateLimit: { windowLimit: 30, windowSize: 60, aggregateBy: ['ip', 'domain'] },
 }

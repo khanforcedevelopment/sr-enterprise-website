@@ -14,7 +14,7 @@
  */
 import {
   json, cleanReference, cleanText, toAmount, maxAed, readJsonRequest, ziina, ziinaLive, ziinaEmbedded, isHttps,
-  ZIINA_PAY_ORIGIN, MIN_AED,
+  ZIINA_PAY_ORIGIN, MIN_AED, newInvoiceNumber,
 } from '../lib/shared.mjs'
 import { savePayment } from '../lib/store.mjs'
 import { paymobConfigured, paymobLive, paymobIntegrationIds, createIntention, newPaymobRef } from '../lib/paymob.mjs'
@@ -32,7 +32,8 @@ export default async (req) => {
   const provider = body.provider === 'paymob' ? 'paymob' : 'ziina'
   if (provider === 'paymob' ? !paymobConfigured() : !process.env.ZIINA_API_TOKEN) return json(503, { error: NOT_AVAILABLE })
 
-  const reference = cleanReference(body.reference)
+  // No invoice number from the client: make one (e.g. SR-20261127-K7QM). It is shown on the receipt.
+  const reference = cleanReference(body.reference) || newInvoiceNumber()
   if (reference.length < 2) return json(400, { error: 'Please enter your invoice or reference number.' })
   const name = cleanText(body.name, 80)
 
@@ -86,7 +87,7 @@ export default async (req) => {
     }
 
     console.log(`Ziina intent ${intent.id} for ${reference}: AED ${amount.toFixed(2)}${ziinaLive() ? '' : ' (test)'}`)
-    return json(200, { url, embedded, amount, live: ziinaLive() })
+    return json(200, { url, embedded, amount, reference, live: ziinaLive() })
   } catch (err) {
     console.error('Ziina error:', err.message)
     return json(502, { error: 'We could not open the payment page right now. Please try again or contact us.' })
@@ -138,7 +139,7 @@ async function startPaymob({ body, reference, name, amount, origin, message }) {
     console.log(`Paymob intention ${id} for ${reference}: AED ${amount.toFixed(2)}${paymobLive() ? '' : ' (test)'}`)
     // The public key and the one-hour client secret are meant for the browser (Paymob Pixel). The secret key never leaves here.
     const pixel = { publicKey: process.env.PAYMOB_PUBLIC_KEY, clientSecret: intention.client_secret }
-    return json(200, { url: checkoutUrl, embedded: true, pixel, amount, live: paymobLive() })
+    return json(200, { url: checkoutUrl, embedded: true, pixel, amount, reference, live: paymobLive() })
   } catch (err) {
     console.error('Paymob error:', err.message)
     return json(502, { error: 'We could not open the payment page right now. Please try again or contact us.' })
