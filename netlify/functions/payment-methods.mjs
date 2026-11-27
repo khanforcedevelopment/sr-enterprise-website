@@ -4,10 +4,11 @@
  */
 import { json } from '../lib/shared.mjs'
 import { paymobConfigured } from '../lib/paymob.mjs'
+import { cashEnabled } from '../lib/shared.mjs'
 
 export default async (req) => {
   if (req.method !== 'GET') return json(405, { error: 'Method not allowed' })
-  return json(200, { ziina: Boolean(process.env.ZIINA_API_TOKEN), paymob: paymobConfigured() })
+  return json(200, { ziina: Boolean(process.env.ZIINA_API_TOKEN), paymob: paymobConfigured(), cash: cashEnabled() })
 }
 
 export const config = {

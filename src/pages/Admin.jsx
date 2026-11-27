@@ -21,6 +21,7 @@ const STATUS = {
   failed: { label: 'Failed', cls: 'bg-red-50 text-red-700 ring-red-200' },
   canceled: { label: 'Cancelled', cls: 'bg-red-50 text-red-700 ring-red-200' },
   refunded: { label: 'Refunded', cls: 'bg-navy-50 text-navy-600 ring-navy-200' },
+  awaiting_cash: { label: 'Waiting for cash', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
 }
 const PROVIDERS = { ziina: 'Ziina', paymob: 'Paymob', cash: 'Cash' }
 const TYPES = {
@@ -248,7 +249,26 @@ export default function Admin() {
 
         <div className="mt-4 rounded-2xl bg-white shadow-card ring-1 ring-navy-100">
           {tab === 'payments' ? (
-            <PaymentsList items={payments} error={data?.paymentsError} />
+            <PaymentsList
+              items={payments}
+              error={data?.paymentsError}
+              onCash={async (p, received) => {
+                setError('')
+                setNotice('')
+                try {
+                  const res = await api(received ? 'cash-received' : 'cash-cancel', { id: p.id })
+                  const msg = received ? (RECEIPT_RESULT[res.receipt] || (() => ''))(res.payment.email) : ''
+                  setNotice(
+                    received
+                      ? `Cash of ${fmtAed(res.payment.amount)} for ${res.payment.reference} marked as received. ${msg}`
+                      : `Cash request for ${res.payment.reference} cancelled.`
+                  )
+                  await load()
+                } catch (err) {
+                  setError(err.message)
+                }
+              }}
+            />
           ) : (
             <EnquiriesList items={enquiries} info={data?.enquiries} />
           )}
@@ -290,7 +310,8 @@ function Empty({ children }) {
   return <p className="p-10 text-center text-sm text-navy-500">{children}</p>
 }
 
-function PaymentsList({ items, error }) {
+function PaymentsList({ items, error, onCash }) {
+  const [working, setWorking] = useState('')
   if (error) return <div className="p-6"><ErrorBanner>{error}</ErrorBanner></div>
   if (!items.length) return <Empty>No online payments yet.</Empty>
   return (
@@ -308,7 +329,13 @@ function PaymentsList({ items, error }) {
               <p className="mt-1 text-xs text-navy-500">
                 {p.provider === 'cash' ? (
                   <>
-                    Cash received {p.paidDateOnly ? new Date(p.paidAt).toLocaleDateString('en-AE', { day: '2-digit', month: 'short', year: 'numeric' }) : fmtDate(p.paidAt)}
+                    {p.status === 'awaiting_cash' ? (
+                      <>Client chose cash on {fmtDate(p.createdAt)}{p.phone && <span className="ml-1">· {p.phone}</span>}</>
+                    ) : p.status === 'canceled' ? (
+                      <>Cash request cancelled</>
+                    ) : (
+                      <>Cash received {p.paidDateOnly ? new Date(p.paidAt).toLocaleDateString('en-AE', { day: '2-digit', month: 'short', year: 'numeric' }) : fmtDate(p.paidAt)}</>
+                    )}
                     {p.note && <span className="ml-1">· {p.note}</span>}
                   </>
                 ) : (
@@ -340,7 +367,36 @@ function PaymentsList({ items, error }) {
                 )}
               </p>
             </div>
-            <div className="flex items-center gap-3 sm:justify-end">
+            <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+              {p.provider === 'cash' && p.status === 'awaiting_cash' && (
+                <>
+                  <button
+                    type="button"
+                    className="btn-navy px-3 py-1.5 text-xs"
+                    disabled={working === p.id}
+                    onClick={async () => {
+                      setWorking(p.id)
+                      await onCash(p, true)
+                      setWorking('')
+                    }}
+                  >
+                    {working === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />}
+                    Mark cash received
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-navy-500 underline hover:text-navy-800"
+                    disabled={working === p.id}
+                    onClick={async () => {
+                      setWorking(p.id)
+                      await onCash(p, false)
+                      setWorking('')
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
               <span className="font-semibold text-navy-900">{fmtAed(p.amount)}</span>
               <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${st.cls}`}>{st.label}</span>
             </div>

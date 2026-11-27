@@ -14,9 +14,11 @@
  */
 import {
   json, cleanReference, cleanText, toAmount, maxAed, readJsonRequest, ziina, ziinaLive, ziinaEmbedded, isHttps,
-  ZIINA_PAY_ORIGIN, MIN_AED, newInvoiceNumber,
+  ZIINA_PAY_ORIGIN, MIN_AED, newInvoiceNumber, cashEnabled,
 } from '../lib/shared.mjs'
 import { savePayment } from '../lib/store.mjs'
+import { notifyCashRequest } from '../lib/send-receipt.mjs'
+import { randomBytes } from 'node:crypto'
 import { paymobConfigured, paymobLive, paymobIntegrationIds, createIntention, newPaymobRef } from '../lib/paymob.mjs'
 
 const NOT_AVAILABLE = 'Online payment is not available yet. Please contact us on WhatsApp or email.'
@@ -29,8 +31,8 @@ const cleanPhone = (v) => String(v || '').replace(/[^\d+]/g, '').slice(0, 16)
 export default async (req) => {
   const { body, error } = await readJsonRequest(req)
   if (error) return error
-  const provider = body.provider === 'paymob' ? 'paymob' : 'ziina'
-  if (provider === 'paymob' ? !paymobConfigured() : !process.env.ZIINA_API_TOKEN) return json(503, { error: NOT_AVAILABLE })
+  const provider = ['paymob', 'cash'].includes(body.provider) ? body.provider : 'ziina'
+  if (provider === 'cash' ? !cashEnabled() : provider === 'paymob' ? !paymobConfigured() : !process.env.ZIINA_API_TOKEN) return json(503, { error: NOT_AVAILABLE })
 
   // No invoice number from the client: make one (e.g. SR-20261127-K7QM). It is shown on the receipt.
   const reference = cleanReference(body.reference) || newInvoiceNumber()
@@ -48,6 +50,7 @@ export default async (req) => {
   const message = `Invoice ${reference}${name ? ` - ${name}` : ''}`
 
   if (provider === 'paymob') return startPaymob({ body, reference, name, amount, origin, message })
+  if (provider === 'cash') return startCash({ body, reference, name, amount, origin })
 
   // The receipt email goes to this address once Ziina confirms the payment.
   const email = cleanEmail(body.email)
@@ -144,6 +147,32 @@ async function startPaymob({ body, reference, name, amount, origin, message }) {
     console.error('Paymob error:', err.message)
     return json(502, { error: 'We could not open the payment page right now. Please try again or contact us.' })
   }
+}
+
+/**
+ * "Pay in cash": nothing is charged. The request is saved as "waiting for cash" so the admin sees it, and the
+ * admin gets an email. When the cash is received, the admin clicks "Mark cash received" in /admin and the
+ * client is emailed the receipt.
+ */
+async function startCash({ body, reference, name, amount, origin }) {
+  const email = cleanEmail(body.email)
+  if (!email) return json(400, { error: 'Please enter a valid email address.' })
+  const phone = cleanPhone(body.phone)
+  const now = new Date().toISOString()
+  const rec = {
+    id: `SRCASH-${randomBytes(10).toString('hex')}`,
+    provider: 'cash', requested: true, reference, name, email, phone, amount, currency: 'AED',
+    status: 'awaiting_cash', test: false, createdAt: now, updatedAt: now,
+  }
+  try {
+    await savePayment(rec)
+  } catch (err) {
+    console.error('Could not save cash request:', err.message)
+    return json(502, { error: 'We could not save your request right now. Please try again or contact us.' })
+  }
+  await notifyCashRequest(rec, { origin })
+  console.log(`Cash request ${rec.id} for ${reference}: AED ${amount.toFixed(2)}`)
+  return json(200, { cash: true, reference, amount })
 }
 
 export const config = {
