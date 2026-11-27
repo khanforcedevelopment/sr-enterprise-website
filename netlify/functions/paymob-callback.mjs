@@ -4,10 +4,12 @@
  *   GET  /api/paymob/callback  "Transaction response" redirect: the client's browser comes back here after paying
  *                              and is sent on to /payment/success or /payment/cancel.
  * The status saved here is what the admin panel shows. Always confirm payments in the Paymob dashboard too.
+ * When a payment is confirmed here, the client is emailed a PDF receipt once (netlify/lib/send-receipt.mjs).
  */
 import { json } from '../lib/shared.mjs'
 import { listPayments, updatePayment, payments } from '../lib/store.mjs'
 import { fieldsFromTransaction, fieldsFromQuery, verifyHmac, statusFromFields } from '../lib/paymob.mjs'
+import { sendReceiptOnce } from '../lib/send-receipt.mjs'
 
 async function findRecord(merchantOrderId, orderId) {
   if (merchantOrderId) {
@@ -35,6 +37,7 @@ async function record(fields, merchantOrderId) {
     paymobTransactionId: String(fields.id || ''),
     updatedAt: new Date().toISOString(),
     ...(amountMismatch ? { amountMismatch: true } : {}),
+    ...(status === 'completed' && !rec.paidAt ? { paidAt: new Date().toISOString() } : {}),
   }
   // Never let a late "pending" or "failed" overwrite a payment already recorded as paid.
   if (rec.status === 'completed' && status !== 'refunded' && status !== 'canceled') return rec
@@ -54,7 +57,8 @@ export default async (req) => {
     if (valid) {
       status = statusFromFields(fields)
       try {
-        await record(fields, url.searchParams.get('merchant_order_id'))
+        const rec = await record(fields, url.searchParams.get('merchant_order_id'))
+        await sendReceiptOnce(rec, { origin: url.origin })
       } catch (err) {
         console.error('Paymob return: could not save status:', err.message)
       }
@@ -74,12 +78,14 @@ export default async (req) => {
   if (body?.type !== 'TRANSACTION' || !body.obj || typeof body.obj !== 'object') return json(200, { ok: true, ignored: true })
   const fields = fieldsFromTransaction(body.obj)
   if (!verifyHmac(fields, hmac)) return json(401, { error: 'Invalid signature.' })
+  let rec
   try {
-    await record(fields, body.obj.order?.merchant_order_id || body.obj.special_reference)
+    rec = await record(fields, body.obj.order?.merchant_order_id || body.obj.special_reference)
   } catch (err) {
     console.error('Paymob callback: could not save status:', err.message)
     return json(500, { error: 'Could not save.' })
   }
+  await sendReceiptOnce(rec, { origin: url.origin }) // never throws; a failed send is retried by payment-sync
   return json(200, { ok: true })
 }
 

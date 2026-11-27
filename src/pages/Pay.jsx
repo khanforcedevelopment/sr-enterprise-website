@@ -132,8 +132,8 @@ export default function Pay() {
     const errs = {}
     if (reference.length < 2) errs.reference = 'Please enter the invoice or reference number from your invoice.'
     if (!Number.isFinite(amount) || amount < MIN_PAYMENT_AED) errs.amount = `Please enter at least AED ${fmt(MIN_PAYMENT_AED)}.`
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(values.email.trim())) errs.email = 'Please enter a valid email address.'
     if (isPaymob) {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(values.email.trim())) errs.email = 'Please enter a valid email address.'
       if (values.phone.replace(/\D/g, '').length < 7) errs.phone = 'Please enter your mobile number.'
     }
     setErrors(errs)
@@ -150,7 +150,8 @@ export default function Pay() {
           reference,
           name: values.name.trim(),
           amount,
-          ...(isPaymob ? { email: values.email.trim(), phone: values.phone.trim() } : {}),
+          email: values.email.trim(),
+          ...(isPaymob ? { phone: values.phone.trim() } : {}),
         }),
       })
       let data = {}
@@ -249,19 +250,20 @@ export default function Pay() {
             maxLength={80}
             autoComplete="organization"
           />
-          {isPaymob && (
-            <div className="grid gap-5 sm:grid-cols-2">
-              <FormField
-                label="Email"
-                name="email"
-                type="email"
-                value={values.email}
-                onChange={set('email')}
-                error={errors.email}
-                required
-                maxLength={120}
-                autoComplete="email"
-              />
+          <div className={isPaymob ? 'grid gap-5 sm:grid-cols-2' : ''}>
+            <FormField
+              label="Email"
+              name="email"
+              type="email"
+              value={values.email}
+              onChange={set('email')}
+              error={errors.email}
+              required
+              maxLength={120}
+              autoComplete="email"
+              hint={isPaymob ? undefined : 'Your payment receipt will be emailed here.'}
+            />
+            {isPaymob && (
               <FormField
                 label="Mobile number"
                 name="phone"
@@ -274,8 +276,8 @@ export default function Pay() {
                 placeholder="+971 50 000 0000"
                 autoComplete="tel"
               />
-            </div>
-          )}
+            )}
+          </div>
           <FormField
             label="Amount to pay now (AED)"
             name="amount"

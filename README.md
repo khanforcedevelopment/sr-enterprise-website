@@ -227,6 +227,31 @@ dashboard too, never from the website's success page. The Content-Security-Polic
 `netlify.toml` and `public/_headers`) allow `uae.paymob.com` and `uae.checkout.paymob.com` for this. Apple Pay and
 Google Pay inside the page are not switched on yet (card only); they need Apple Pay domain verification with Paymob first.
 
+## 8c. Receipt email after online payment (Resend)
+
+When Paymob or Ziina **confirms** a payment, the client automatically gets an email with a branded PDF
+payment receipt (logo, invoice reference, amount, receipt number, transaction ID). You get a copy (BCC).
+
+- Paymob: sent from the HMAC-checked callback (`/api/paymob/callback`).
+- Ziina: the status is always read back from Ziina's API, by the scheduled `payment-sync` function (every 5 minutes)
+  and the admin panel. Optional instant webhook: register `https://<your-site>/api/ziina/webhook` with Ziina and
+  put the secret you chose in `ZIINA_WEBHOOK_SECRET`.
+- Each payment gets **one** receipt only: a lock in Netlify Blobs plus Resend's `Idempotency-Key`. A failed send is
+  retried by `payment-sync` (up to 5 tries). Payments made before this feature are never emailed.
+- The receipt is a payment receipt, **not a tax invoice**.
+- The /pay page now asks for the client's email for Ziina too.
+
+Setup:
+1. Create a free account at https://resend.com.
+2. Resend > Domains > Add `srenterprisefz.com`, add the DNS records it shows at your DNS provider, click Verify.
+3. Resend > API Keys > Create (Sending access).
+4. Netlify > Site configuration > Environment variables:
+   - `RESEND_API_KEY` = the key (never put it in code or chat)
+   - `RECEIPT_FROM` = `SR Enterprise <billing@srenterprisefz.com>` (any address on the verified domain)
+   - Optional: `RECEIPT_BCC` (default `admin@srenterprisefz.com`, `off` for none), `RECEIPT_REPLY_TO`,
+     `RECEIPT_SEND_TEST=false` to stop receipts for test payments (they are marked [TEST] otherwise).
+5. Redeploy. The admin panel shows "Receipt emails: On" and "receipt emailed" next to each paid payment.
+
 ## 8b. Admin panel (/admin)
 
 `https://srenterprisefz.com/admin` is a private, password-protected panel that shows:
